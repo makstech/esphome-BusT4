@@ -1,5 +1,7 @@
 #include "cover.h"
 #include "esphome/core/log.h"
+#include "esphome/core/helpers.h"
+#include <cmath>
 
 namespace esphome::bus_t4 {
 
@@ -19,6 +21,9 @@ void BusT4Cover::setup() {
   // Initialize with unknown position
   this->position = cover::COVER_OPEN;
   this->current_operation = cover::COVER_OPERATION_IDLE;
+  
+  // Load learned durations from flash
+  load_learned_durations();
 }
 
 void BusT4Cover::loop() {
@@ -31,11 +36,54 @@ void BusT4Cover::loop() {
       init_device();
     }
   }
+  
+  // Time-based position tracking during movement
+  if (movement_start_time_ > 0 && current_operation != cover::COVER_OPERATION_IDLE) {
+    uint32_t elapsed = now - movement_start_time_;
+    float new_position = position_at_start_;
+    
+    if (current_operation == cover::COVER_OPERATION_OPENING) {
+      // Opening: position increases from start position toward 1.0
+      float travel = (float)elapsed / (float)open_duration_;
+      new_position = position_at_start_ + travel;
+      if (new_position > 1.0f) new_position = 1.0f;
+    } else if (current_operation == cover::COVER_OPERATION_CLOSING) {
+      // Closing: position decreases from start position toward 0.0
+      float travel = (float)elapsed / (float)close_duration_;
+      new_position = position_at_start_ - travel;
+      if (new_position < 0.0f) new_position = 0.0f;
+    }
+    
+    // Update position if changed significantly
+    if (abs(new_position - this->position) > 0.01f) {
+      this->position = new_position;
+      publish_state_if_changed();
+      
+      // Check if we've reached target position
+      if (target_position_ >= 0.0f) {
+        bool target_reached = false;
+        if (current_operation == cover::COVER_OPERATION_OPENING && this->position >= target_position_) {
+          target_reached = true;
+        } else if (current_operation == cover::COVER_OPERATION_CLOSING && this->position <= target_position_) {
+          target_reached = true;
+        }
+        
+        if (target_reached) {
+          ESP_LOGI(TAG, "Target position %.0f%% reached, stopping", target_position_ * 100);
+          send_cmd(CMD_STOP);
+          target_position_ = -1.0f;
+        }
+      }
+    }
+  }
 }
 
 void BusT4Cover::dump_config() {
   LOG_COVER("", "Bus T4 Cover", this);
   ESP_LOGCONFIG(TAG, "  Initialized: %s", init_ok_ ? "Yes" : "No");
+  ESP_LOGCONFIG(TAG, "  Auto-learn timing: %s", auto_learn_timing_ ? "Yes" : "No");
+  ESP_LOGCONFIG(TAG, "  Open duration: %.1fs", open_duration_ / 1000.0f);
+  ESP_LOGCONFIG(TAG, "  Close duration: %.1fs", close_duration_ / 1000.0f);
   if (init_ok_) {
     const char *type_str = "Unknown";
     switch (motor_type_) {
@@ -138,49 +186,81 @@ void BusT4Cover::parse_dep_packet(const T4Packet &packet) {
       case STA_OPENING:
       case 0x83:  // Some controllers use this for opening
         ESP_LOGI(TAG, "Gate opening");
+        if (current_operation != cover::COVER_OPERATION_OPENING) {
+          movement_start_time_ = millis();
+          position_at_start_ = this->position;
+          // Start learning if opening from fully closed
+          if (auto_learn_timing_ && this->position <= CLOSED_POSITION_THRESHOLD) {
+            start_learning_open();
+          }
+        }
         current_operation = cover::COVER_OPERATION_OPENING;
         break;
         
       case STA_CLOSING:
       case 0x84:  // Some controllers use this for closing
         ESP_LOGI(TAG, "Gate closing");
+        if (current_operation != cover::COVER_OPERATION_CLOSING) {
+          movement_start_time_ = millis();
+          position_at_start_ = this->position;
+          // Start learning if closing from fully open
+          if (auto_learn_timing_ && this->position >= (1.0f - CLOSED_POSITION_THRESHOLD)) {
+            start_learning_close();
+          }
+        }
         current_operation = cover::COVER_OPERATION_CLOSING;
         break;
         
       case STA_OPENED:
         ESP_LOGI(TAG, "Gate fully open");
+        // Finish learning open duration if we were learning
+        if (learning_open_) {
+          finish_learning_open();
+        }
+        cancel_learning();  // Cancel any other learning
         current_operation = cover::COVER_OPERATION_IDLE;
         this->position = cover::COVER_OPEN;
         target_position_ = -1.0f;
+        movement_start_time_ = 0;
         break;
         
       case STA_CLOSED:
         ESP_LOGI(TAG, "Gate fully closed");
+        // Finish learning close duration if we were learning
+        if (learning_close_) {
+          finish_learning_close();
+        }
+        cancel_learning();  // Cancel any other learning
         current_operation = cover::COVER_OPERATION_IDLE;
         this->position = cover::COVER_CLOSED;
         target_position_ = -1.0f;
+        movement_start_time_ = 0;
         break;
         
       case STA_STOPPED:
       case OP_STOPPED:
         ESP_LOGI(TAG, "Gate stopped");
+        cancel_learning();  // Stopped mid-movement, can't learn
         current_operation = cover::COVER_OPERATION_IDLE;
         target_position_ = -1.0f;
-        request_position();  // Get final position
+        movement_start_time_ = 0;
+        // Position estimate stays at current calculated value
         break;
         
       case STA_ENDTIME:
         ESP_LOGI(TAG, "Gate operation ended (timeout)");
+        cancel_learning();  // Timeout, can't learn
         current_operation = cover::COVER_OPERATION_IDLE;
         target_position_ = -1.0f;
-        request_position();
+        movement_start_time_ = 0;
         break;
         
       case STA_PART_OPENED:
         ESP_LOGI(TAG, "Gate partially open");
+        cancel_learning();  // Partial movement, can't learn
         current_operation = cover::COVER_OPERATION_IDLE;
         target_position_ = -1.0f;
-        request_position();
+        movement_start_time_ = 0;
         break;
     }
     
@@ -309,7 +389,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
         case STA_STOPPED:
         case STA_UNKNOWN:
           current_operation = cover::COVER_OPERATION_IDLE;
-          request_position();
+          // Note: Can't request position - controller doesn't respond to DMP position queries
           break;
       }
       publish_state_if_changed();
@@ -472,6 +552,131 @@ void BusT4Cover::publish_state_if_changed() {
     this->publish_state();
     last_published_op_ = current_operation;
     last_published_pos_ = this->position;
+  }
+}
+
+void BusT4Cover::start_learning_open() {
+  if (!auto_learn_timing_) return;
+  
+  ESP_LOGI(TAG, "Starting to learn open duration (gate opening from closed)");
+  learning_open_ = true;
+  learning_close_ = false;
+  learning_start_time_ = millis();
+}
+
+void BusT4Cover::start_learning_close() {
+  if (!auto_learn_timing_) return;
+  
+  ESP_LOGI(TAG, "Starting to learn close duration (gate closing from open)");
+  learning_close_ = true;
+  learning_open_ = false;
+  learning_start_time_ = millis();
+}
+
+void BusT4Cover::finish_learning_open() {
+  if (!learning_open_ || learning_start_time_ == 0) return;
+  
+  uint32_t learned_duration = millis() - learning_start_time_;
+  
+  // Validate the learned duration
+  if (learned_duration < MIN_LEARNED_DURATION) {
+    ESP_LOGW(TAG, "Learned open duration too short (%.1fs), ignoring", learned_duration / 1000.0f);
+    return;
+  }
+  if (learned_duration > MAX_LEARNED_DURATION) {
+    ESP_LOGW(TAG, "Learned open duration too long (%.1fs), ignoring", learned_duration / 1000.0f);
+    return;
+  }
+  
+  // Check if this differs significantly from current value
+  float deviation = std::abs((float)learned_duration - (float)open_duration_) / (float)open_duration_;
+  
+  if (deviation > LEARNING_DEVIATION_THRESHOLD || open_duration_ == 20000) {
+    ESP_LOGI(TAG, "Learned new open duration: %.1fs (was %.1fs, deviation %.0f%%)", 
+             learned_duration / 1000.0f, open_duration_ / 1000.0f, deviation * 100);
+    open_duration_ = learned_duration;
+    save_learned_durations();
+  } else {
+    ESP_LOGD(TAG, "Open duration unchanged (learned %.1fs, current %.1fs, deviation %.0f%%)",
+             learned_duration / 1000.0f, open_duration_ / 1000.0f, deviation * 100);
+  }
+  
+  learning_open_ = false;
+  learning_start_time_ = 0;
+}
+
+void BusT4Cover::finish_learning_close() {
+  if (!learning_close_ || learning_start_time_ == 0) return;
+  
+  uint32_t learned_duration = millis() - learning_start_time_;
+  
+  // Validate the learned duration
+  if (learned_duration < MIN_LEARNED_DURATION) {
+    ESP_LOGW(TAG, "Learned close duration too short (%.1fs), ignoring", learned_duration / 1000.0f);
+    return;
+  }
+  if (learned_duration > MAX_LEARNED_DURATION) {
+    ESP_LOGW(TAG, "Learned close duration too long (%.1fs), ignoring", learned_duration / 1000.0f);
+    return;
+  }
+  
+  // Check if this differs significantly from current value
+  float deviation = std::abs((float)learned_duration - (float)close_duration_) / (float)close_duration_;
+  
+  if (deviation > LEARNING_DEVIATION_THRESHOLD || close_duration_ == 20000) {
+    ESP_LOGI(TAG, "Learned new close duration: %.1fs (was %.1fs, deviation %.0f%%)", 
+             learned_duration / 1000.0f, close_duration_ / 1000.0f, deviation * 100);
+    close_duration_ = learned_duration;
+    save_learned_durations();
+  } else {
+    ESP_LOGD(TAG, "Close duration unchanged (learned %.1fs, current %.1fs, deviation %.0f%%)",
+             learned_duration / 1000.0f, close_duration_ / 1000.0f, deviation * 100);
+  }
+  
+  learning_close_ = false;
+  learning_start_time_ = 0;
+}
+
+void BusT4Cover::cancel_learning() {
+  if (learning_open_ || learning_close_) {
+    ESP_LOGD(TAG, "Learning cancelled (movement interrupted)");
+  }
+  learning_open_ = false;
+  learning_close_ = false;
+  learning_start_time_ = 0;
+}
+
+void BusT4Cover::save_learned_durations() {
+  LearnedDurations data;
+  data.open_duration = open_duration_;
+  data.close_duration = close_duration_;
+  data.valid = true;
+  
+  if (pref_.save(&data)) {
+    ESP_LOGI(TAG, "Saved learned durations to flash (open: %.1fs, close: %.1fs)",
+             open_duration_ / 1000.0f, close_duration_ / 1000.0f);
+  } else {
+    ESP_LOGW(TAG, "Failed to save learned durations to flash");
+  }
+}
+
+void BusT4Cover::load_learned_durations() {
+  // Initialize preferences with a unique hash based on component
+  pref_ = global_preferences->make_preference<LearnedDurations>(fnv1_hash("bus_t4_cover_timing"));
+  
+  LearnedDurations data;
+  if (pref_.load(&data) && data.valid) {
+    // Validate loaded values
+    if (data.open_duration >= MIN_LEARNED_DURATION && data.open_duration <= MAX_LEARNED_DURATION) {
+      open_duration_ = data.open_duration;
+      ESP_LOGI(TAG, "Loaded open duration from flash: %.1fs", open_duration_ / 1000.0f);
+    }
+    if (data.close_duration >= MIN_LEARNED_DURATION && data.close_duration <= MAX_LEARNED_DURATION) {
+      close_duration_ = data.close_duration;
+      ESP_LOGI(TAG, "Loaded close duration from flash: %.1fs", close_duration_ / 1000.0f);
+    }
+  } else {
+    ESP_LOGD(TAG, "No saved timing data found, using defaults");
   }
 }
 

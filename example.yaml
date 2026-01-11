@@ -37,4 +37,11 @@ cover:
 - platform: bus_t4
   name: None
   id: gate
+  # Auto-learn timing: learns open/close duration automatically by observing
+  # complete open/close cycles. Learned values are saved to flash.
+  auto_learn_timing: true
+  # Initial/fallback values for time-based position tracking.
+  # These will be overwritten when auto-learning completes.
+  open_duration: 20s
+  close_duration: 20s
 
