@@ -26,19 +26,9 @@ void BusT4Cover::loop() {
   
   // Initialization state machine - send one request at a time with delays
   if (!init_ok_) {
-    if (now - last_init_attempt_ > 2000) {  // 2 second between init steps
+    if (now - last_init_attempt_ > 2000) {  // 2 seconds between init steps
       last_init_attempt_ = now;
       init_device();
-    }
-  } else {
-    // After init, periodically request status
-    if (now - last_position_request_ > 5000) {
-      last_position_request_ = now;
-      if (current_operation != cover::COVER_OPERATION_IDLE) {
-        request_position();
-      } else {
-        request_status();
-      }
     }
   }
 }
