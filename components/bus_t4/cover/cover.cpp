@@ -96,12 +96,14 @@ void BusT4Cover::control(const cover::CoverCall &call) {
 }
 
 void BusT4Cover::on_packet(const T4Packet &packet) {
-  // Only process packets from our target address
-  if (packet.header.from != target_address_) {
+  // During initialization, accept packets from any source (for device discovery)
+  // After init, only process packets from our target controller
+  if (init_ok_ && packet.header.from != target_address_) {
     return;
   }
   
-  ESP_LOGV(TAG, "Received packet from controller, protocol=%d", packet.header.protocol);
+  ESP_LOGV(TAG, "Received packet from 0x%02X.%02X, protocol=%d", 
+           packet.header.from.address, packet.header.from.endpoint, packet.header.protocol);
   
   if (packet.header.protocol == DEP) {
     parse_dep_packet(packet);
@@ -112,31 +114,41 @@ void BusT4Cover::on_packet(const T4Packet &packet) {
 
 void BusT4Cover::parse_dep_packet(const T4Packet &packet) {
   // DEP packets contain command responses and status updates
-  // Structure: [device] [command] [status/data...]
+  // Structure after header: [device] [command] [status/data...]
+  // Data layout:
+  //   data[7] = device
+  //   data[8] = command
+  //   data[9+] = payload
   
-  if (packet.size < 11) return;
+  if (packet.size < 10) return;
   
   uint8_t device = packet.message.device;
   uint8_t command = packet.message.command;
   
-  ESP_LOGD(TAG, "DEP packet: device=0x%02X, command=0x%02X", device, command);
+  ESP_LOGD(TAG, "DEP packet: device=0x%02X, command=0x%02X, size=%d", device, command, packet.size);
+  ESP_LOGV(TAG, "DEP raw: %02X %02X %02X %02X %02X %02X",
+           packet.data[7], packet.data[8], packet.data[9], packet.data[10],
+           packet.data[11], packet.data[12]);
   
-  // Check for RUN command responses
-  if (command == RUN || command == (RUN - 0x80)) {
-    uint8_t status = packet.data[10];  // Status byte
+  // DEP payload starts at data[9]
+  const uint8_t DEP_DATA_OFFSET = 9;
+  
+  // Check for RUN command responses (command byte may have 0x80 subtracted)
+  if (command == RUN || command == (RUN - 0x80) || command == OP_STOP || command == OP_OPEN || command == OP_CLOSE) {
+    uint8_t status = packet.data[DEP_DATA_OFFSET];
     
-    ESP_LOGD(TAG, "RUN response: status=0x%02X", status);
+    ESP_LOGD(TAG, "RUN/Command response: status=0x%02X", status);
     
     // Parse operation status
     switch (status) {
       case STA_OPENING:
-      case 0x83:  // Some controllers use this
+      case 0x83:  // Some controllers use this for opening
         ESP_LOGI(TAG, "Gate opening");
         current_operation = cover::COVER_OPERATION_OPENING;
         break;
         
       case STA_CLOSING:
-      case 0x84:  // Some controllers use this
+      case 0x84:  // Some controllers use this for closing
         ESP_LOGI(TAG, "Gate closing");
         current_operation = cover::COVER_OPERATION_CLOSING;
         break;
@@ -183,8 +195,11 @@ void BusT4Cover::parse_dep_packet(const T4Packet &packet) {
   
   // Check for STA (status during movement) packets
   if (command == STA) {
-    uint8_t status = packet.data[10];
-    uint16_t pos = (packet.data[11] << 8) | packet.data[12];
+    uint8_t status = packet.data[DEP_DATA_OFFSET];
+    uint16_t pos = 0;
+    if (packet.size >= 12) {
+      pos = (packet.data[DEP_DATA_OFFSET + 1] << 8) | packet.data[DEP_DATA_OFFSET + 2];
+    }
     
     ESP_LOGD(TAG, "STA packet: status=0x%02X, pos=%d", status, pos);
     
@@ -208,40 +223,53 @@ void BusT4Cover::parse_dep_packet(const T4Packet &packet) {
         break;
     }
     
-    update_position(pos);
+    if (pos > 0) {
+      update_position(pos);
+    }
+    publish_state_if_changed();
   }
 }
 
 void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
   // DMP packets contain info responses
-  // Structure: [target] [command] [response_type] [sequence] [error] [data...]
+  // Structure: [device] [command] [flags] [sequence] [status] [data...]
   
   if (packet.size < 14) return;
   
-  uint8_t target = packet.message.device;
+  uint8_t device = packet.message.device;
   uint8_t command = packet.message.command;
-  uint8_t response = packet.message.dmp.flags;
-  uint8_t error = packet.message.dmp.status;
+  uint8_t flags = packet.message.dmp.flags;
+  uint8_t sequence = packet.message.dmp.sequence;
+  uint8_t status = packet.message.dmp.status;
   
-  ESP_LOGD(TAG, "DMP packet: target=0x%02X, cmd=0x%02X, resp=0x%02X, err=0x%02X", 
-           target, command, response, error);
+  ESP_LOGD(TAG, "DMP packet: dev=0x%02X, cmd=0x%02X, flags=0x%02X, seq=%d, status=0x%02X", 
+           device, command, flags, sequence, status);
+  
+  // Log raw data for debugging
+  ESP_LOGV(TAG, "DMP raw data: %02X %02X %02X %02X %02X %02X %02X",
+           packet.data[8], packet.data[9], packet.data[10], packet.data[11],
+           packet.data[12], packet.data[13], packet.data[14]);
   
   // Check for errors
-  if (error != ERR_NONE) {
-    ESP_LOGW(TAG, "DMP error: 0x%02X", error);
+  if (status != ERR_NONE) {
+    ESP_LOGW(TAG, "DMP error: 0x%02X", status);
     return;
   }
   
-  // Only process completed GET responses
-  if (response != RSP_GET_COMPLETE && response != RSP_GET_INCOMPLETE) {
+  // Only process GET responses (0x19 = complete, 0x18 = incomplete)
+  if (flags != RSP_GET_COMPLETE && flags != RSP_GET_INCOMPLETE) {
+    ESP_LOGV(TAG, "Ignoring non-GET response: flags=0x%02X", flags);
     return;
   }
   
   // Process based on command type
+  // DMP payload data starts at data[12] (after header + message header)
+  const uint8_t DATA_OFFSET = 12;
+  
   switch (command) {
     case INF_TYPE: {
       // Motor type response
-      uint8_t mtype = packet.data[13];
+      uint8_t mtype = packet.data[DATA_OFFSET];
       motor_type_ = static_cast<T4MotorType>(mtype);
       ESP_LOGI(TAG, "Motor type: 0x%02X", mtype);
       break;
@@ -249,21 +277,33 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     
     case INF_WHO: {
       // Device discovery response
-      if (packet.data[11] == 0x01 && packet.data[13] == CONTROLLER) {
-        ESP_LOGI(TAG, "Found motor controller at 0x%02X%02X", 
+      // First byte of payload is the device type that responded
+      uint8_t responder_type = packet.data[DATA_OFFSET];
+      ESP_LOGI(TAG, "INF_WHO response: device_type=0x%02X from 0x%02X.%02X", 
+               responder_type, packet.header.from.address, packet.header.from.endpoint);
+      
+      // Accept if it's a controller (0x04) or if from address has endpoint 0x03 (common for CU)
+      if (responder_type == CONTROLLER || packet.header.from.endpoint == 0x03) {
+        ESP_LOGI(TAG, "Found motor controller at 0x%02X.%02X", 
                  packet.header.from.address, packet.header.from.endpoint);
         target_address_ = packet.header.from;
         init_ok_ = true;
+        
+        // Now request additional info
+        send_info_request(FOR_CU, INF_TYPE);
+        send_info_request(FOR_CU, INF_POS_MAX);
+        send_info_request(FOR_CU, INF_POS_MIN);
+        send_info_request(FOR_CU, INF_STATUS);
       }
       break;
     }
     
     case INF_STATUS: {
       // Gate status response
-      uint8_t status = packet.data[13];
-      ESP_LOGI(TAG, "Gate status: 0x%02X", status);
+      uint8_t gate_status = packet.data[DATA_OFFSET];
+      ESP_LOGI(TAG, "Gate status: 0x%02X", gate_status);
       
-      switch (status) {
+      switch (gate_status) {
         case STA_OPENED:
           current_operation = cover::COVER_OPERATION_IDLE;
           this->position = cover::COVER_OPEN;
@@ -289,16 +329,16 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     }
     
     case INF_CUR_POS: {
-      // Current position response
-      uint16_t pos = (packet.data[13] << 8) | packet.data[14];
+      // Current position response (2 bytes, big endian)
+      uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
       ESP_LOGD(TAG, "Current position: %d", pos);
       update_position(pos);
       break;
     }
     
     case INF_POS_MAX: {
-      // Open position
-      uint16_t pos = (packet.data[13] << 8) | packet.data[14];
+      // Open position (2 bytes, big endian)
+      uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
       if (pos > 0) {
         pos_max_ = pos;
         ESP_LOGI(TAG, "Open position: %d", pos_max_);
@@ -307,16 +347,16 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     }
     
     case INF_POS_MIN: {
-      // Close position
-      uint16_t pos = (packet.data[13] << 8) | packet.data[14];
+      // Close position (2 bytes, big endian)
+      uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
       pos_min_ = pos;
       ESP_LOGI(TAG, "Close position: %d", pos_min_);
       break;
     }
     
     case INF_MAX_OPN: {
-      // Maximum encoder position
-      uint16_t pos = (packet.data[13] << 8) | packet.data[14];
+      // Maximum encoder position (2 bytes, big endian)
+      uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
       ESP_LOGI(TAG, "Max encoder position: %d", pos);
       if (pos > 0) {
         pos_max_ = pos;
@@ -326,7 +366,8 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     
     case INF_IO: {
       // Input/Output state - includes limit switches
-      uint8_t io_state = packet.data[15];
+      // I/O data may have additional offset
+      uint8_t io_state = packet.data[DATA_OFFSET + 3];
       ESP_LOGD(TAG, "I/O state: 0x%02X", io_state);
       
       switch (io_state) {

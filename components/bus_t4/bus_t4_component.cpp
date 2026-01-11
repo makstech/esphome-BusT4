@@ -40,14 +40,12 @@ void BusT4Component::dump_config() {
 void BusT4Component::rxTask() {
   T4Packet packet;
   uint8_t checksum = 0;
+  uint8_t expected_size = 0;
   enum { WAIT = 0, SYNC, SIZE, DATA, CHECKSUM, RESET } rx_state = WAIT;
 
   for (;;) {
     uint8_t byte;
     if (parent_->available() && parent_->read_byte(&byte) == true) {
-      if (rx_state != WAIT && rx_state != SYNC)
-        packet.data[packet.size++] = byte;
-
       switch (rx_state) {
         case WAIT:
           rx_state = (byte == T4_BREAK) ? SYNC : RESET;
@@ -58,31 +56,46 @@ void BusT4Component::rxTask() {
           break;
 
         case SIZE:
-          rx_state = (byte <= 60) ? DATA : RESET;
+          if (byte <= 60) {
+            expected_size = byte;
+            packet.size = 0;
+            checksum = 0;
+            rx_state = DATA;
+          } else {
+            rx_state = RESET;
+          }
           break;
 
         case DATA:
+          packet.data[packet.size++] = byte;
           checksum ^= byte;
-          if (packet.size == packet.data[1] + 1)
+          if (packet.size == expected_size)
             rx_state = CHECKSUM;
           break;
 
         case CHECKSUM:
           if (byte == checksum) {
-            ESP_LOGD(TAG, "Received packet: %s", format_hex_pretty(packet.data, packet.size).c_str());
+            ESP_LOGD(TAG, "Received packet: %s (%d bytes)", 
+                     format_hex_pretty(packet.data, packet.size).c_str(), packet.size);
             xQueueSend(rxQueue_, &packet, portMAX_DELAY);
+          } else {
+            ESP_LOGW(TAG, "Checksum mismatch: expected 0x%02X, got 0x%02X", checksum, byte);
           }
           rx_state = RESET;
           break;
 
         case RESET:
           packet.size = 0;
+          expected_size = 0;
           checksum = 0;
           rx_state = WAIT;
           break;
       }
     } else {
-      rx_state = RESET;
+      // Timeout - reset state if we were in the middle of receiving
+      if (rx_state != WAIT) {
+        rx_state = RESET;
+      }
     }
     vTaskDelay(2);
   }
