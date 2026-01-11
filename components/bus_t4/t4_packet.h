@@ -23,26 +23,105 @@
 static constexpr uint8_t T4_BREAK = 0x00;
 static constexpr uint8_t T4_SYNC = 0x55;
 
-struct T4Source
-{
+struct T4Source {
   uint8_t address;
   uint8_t endpoint;
 
   bool operator==(const T4Source& other) const { return address == other.address && endpoint == other.endpoint; }
+  bool operator!=(const T4Source& other) const { return !(*this == other); }
 };
 
+// Message type (byte 6 of packet)
 enum T4Protocol : uint8_t {
-  DEP = 1,
-  DMP = 8,
+  DEP = 0x01,  // Direct Execute Protocol - command execution
+  DMP = 0x08,  // Device Management Protocol - info requests/responses
 };
 
-enum T4Device : uint8_t
-{
-  STANDARD = 0,
-  OVIEW = 1,
-  CONTROLLER = 4,
-  SCREEN = 6,
-  RADIO = 10,
+// Device type identifiers
+enum T4Device : uint8_t {
+  STANDARD = 0x00,
+  OVIEW = 0x01,
+  CONTROLLER = 0x04,  // Motor control unit
+  SCREEN = 0x06,
+  RADIO = 0x0A,       // OXI receiver
+};
+
+// Command/info target (byte 9)
+enum T4Target : uint8_t {
+  FOR_ALL = 0x00,     // Broadcast to all devices
+  FOR_CU = 0x04,      // For control unit (motor)
+  FOR_OXI = 0x0A,     // For OXI receiver
+};
+
+// Info commands (byte 10 for DMP packets)
+enum T4InfoCommand : uint8_t {
+  INF_TYPE = 0x00,       // Motor type
+  INF_STATUS = 0x01,     // Gate status (open/closed/stopped)
+  INF_WHO = 0x04,        // Who is on the bus?
+  INF_MAC = 0x07,        // MAC address
+  INF_MAN = 0x08,        // Manufacturer
+  INF_PRD = 0x09,        // Product name
+  INF_HWR = 0x0A,        // Hardware version
+  INF_FRM = 0x0B,        // Firmware version
+  INF_DSC = 0x0C,        // Description
+  INF_CUR_POS = 0x11,    // Current position
+  INF_MAX_OPN = 0x12,    // Max encoder position
+  INF_POS_MAX = 0x18,    // Open position
+  INF_POS_MIN = 0x19,    // Close position
+  INF_IO = 0xD1,         // Input/output state (limit switches)
+};
+
+// Request types (byte 11)
+enum T4RequestType : uint8_t {
+  REQ_SET = 0xA9,        // Set parameter
+  REQ_GET = 0x99,        // Get parameter
+  REQ_GET_SUPP = 0x89,   // Get supported commands
+};
+
+// Response flags (subtract 0x80 from request type)
+enum T4ResponseType : uint8_t {
+  RSP_GET_COMPLETE = 0x19,      // GET response complete (0x99 - 0x80)
+  RSP_GET_INCOMPLETE = 0x18,    // GET response incomplete, more data available
+  RSP_SET_COMPLETE = 0x29,      // SET response complete (0xA9 - 0x80)
+};
+
+// Error codes (byte 13)
+enum T4Error : uint8_t {
+  ERR_NONE = 0x00,       // No error
+  ERR_UNSUPPORTED = 0xFD, // Command not supported
+};
+
+// Gate/motor types
+enum T4MotorType : uint8_t {
+  MOTOR_SLIDING = 0x01,
+  MOTOR_SECTIONAL = 0x02,
+  MOTOR_SWING = 0x03,
+  MOTOR_BARRIER = 0x04,
+  MOTOR_UPANDOVER = 0x05,
+};
+
+// Gate status values (from INF_STATUS response, byte 14)
+enum T4GateStatus : uint8_t {
+  STA_UNKNOWN = 0x00,
+  STA_STOPPED = 0x01,
+  STA_OPENING = 0x02,
+  STA_CLOSING = 0x03,
+  STA_OPENED = 0x04,
+  STA_CLOSED = 0x05,
+  STA_ENDTIME = 0x06,       // Maneuver ended by timeout
+  STA_PART_OPENED = 0x10,   // Partially opened
+};
+
+// Operation status in RSP packets (byte 11)
+enum T4OperationStatus : uint8_t {
+  OP_SBS = 0x01,         // Step by step
+  OP_STOP = 0x02,        // Stop command
+  OP_OPEN = 0x03,        // Open command
+  OP_CLOSE = 0x04,       // Close command
+  OP_PARTIAL_1 = 0x05,   // Partial open 1
+  OP_PARTIAL_2 = 0x06,   // Partial open 2
+  OP_PARTIAL_3 = 0x07,   // Partial open 3
+  OP_STOPPED = 0x08,     // Movement stopped
 };
 
 struct T4Packet {
@@ -76,8 +155,7 @@ struct T4Packet {
     };
   };
 
-  uint8_t checksum(uint8_t i, uint8_t c) const
-  {
+  uint8_t checksum(uint8_t i, uint8_t c) const {
     uint8_t h = 0;
     while (c-- > 0)
       h ^= data[i++];
@@ -101,9 +179,19 @@ struct T4Packet {
   }
 };
 
+// DEP command packet structure
+enum T4CommandPacket : uint8_t {
+  RUN = 0x82,  // Execute command
+  STA = 0xC0,  // Status during movement
+};
+
+// Control commands (for RUN)
 enum T4Command : uint8_t {
   CMD_STEP = 0x01,
   CMD_STOP = 0x02,
   CMD_OPEN = 0x03,
   CMD_CLOSE = 0x04,
+  CMD_OPEN_PARTIAL_1 = 0x05,
+  CMD_OPEN_PARTIAL_2 = 0x06,
+  CMD_OPEN_PARTIAL_3 = 0x07,
 };

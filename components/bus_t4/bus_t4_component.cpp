@@ -1,4 +1,5 @@
 #include "bus_t4_component.h"
+#include "bus_t4.h"
 
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
@@ -20,57 +21,86 @@ void BusT4Component::setup() {
   xTaskCreate(txTaskThunk, "bus_t4_tx", 8192, this, 10, &txTask_);
 }
 
+void BusT4Component::loop() {
+  // Process received packets and dispatch to registered devices
+  T4Packet packet;
+  while (xQueueReceive(rxQueue_, &packet, 0)) {
+    // Ignore packets FROM ourselves (TX echo on half-duplex bus)
+    if (packet.header.from == address_) {
+      ESP_LOGV(TAG, "Ignoring TX echo");
+      continue;
+    }
+    
+    // Ignore packets addressed TO ourselves that we sent (broadcast responses come TO us)
+    // But accept packets where TO matches our address (responses to our requests)
+    
+    // Dispatch to all registered devices
+    for (auto *device : devices_) {
+      device->on_packet(packet);
+    }
+  }
+}
+
 void BusT4Component::dump_config() {
   ESP_LOGCONFIG(TAG, "BusT4:");
-  ESP_LOGCONFIG(TAG, "  Address: 0x%02X", address_.address);
-  ESP_LOGCONFIG(TAG, "  Endpoint: 0x%02X", address_.endpoint);
+  ESP_LOGCONFIG(TAG, "  Address: 0x%02X%02X", address_.address, address_.endpoint);
 }
 
 void BusT4Component::rxTask() {
   T4Packet packet;
-  uint8_t checksum = 0;
-  enum { WAIT = 0, SYNC, SIZE, DATA, CHECKSUM, RESET } rx_state = WAIT;
+  uint8_t expected_size = 0;
+  // Protocol format: [BREAK] SYNC SIZE DATA[N] SIZE
+  // The size byte is sent twice (start and end), no separate checksum byte.
+  // Internal checksums are within the DATA portion.
+  enum { WAIT_SYNC = 0, SIZE, DATA, TRAILING_SIZE } rx_state = WAIT_SYNC;
 
   for (;;) {
     uint8_t byte;
     if (parent_->available() && parent_->read_byte(&byte) == true) {
-      if (rx_state != WAIT && rx_state != SYNC)
-        packet.data[packet.size++] = byte;
-
       switch (rx_state) {
-        case WAIT:
-          rx_state = (byte == T4_BREAK) ? SYNC : RESET;
-          break;
-
-        case SYNC:
-          rx_state = (byte == T4_SYNC) ? SIZE : RESET;
+        case WAIT_SYNC:
+          // Wait for SYNC byte (0x55), ignore break bytes (0x00) and others
+          if (byte == T4_SYNC) {
+            rx_state = SIZE;
+          }
           break;
 
         case SIZE:
-          rx_state = (byte <= 60) ? DATA : RESET;
+          if (byte > 0 && byte <= 60) {
+            expected_size = byte;
+            packet.size = 0;
+            rx_state = DATA;
+          } else {
+            // Invalid size, go back to waiting for sync
+            rx_state = WAIT_SYNC;
+          }
           break;
 
         case DATA:
-          checksum ^= byte;
-          if (packet.size == packet.data[1] + 1)
-            rx_state = CHECKSUM;
+          packet.data[packet.size++] = byte;
+          if (packet.size == expected_size)
+            rx_state = TRAILING_SIZE;
           break;
 
-        case CHECKSUM:
-          if (byte == checksum)
-            ESP_LOGD(TAG, "Received packet: %s", format_hex_pretty(packet.data, packet.size).c_str());
-            xQueueSend(rxQueue_, &packet, portMAX_DELAY);
-          rx_state = RESET;
-          break;
-
-        case RESET:
-          packet.size = 0;
-          checksum = 0;
-          rx_state = WAIT;
+        case TRAILING_SIZE:
+          // Verify trailing size matches
+          if (byte == expected_size) {
+            // Verify internal header checksum before accepting
+            uint8_t header_check = packet.checksum(0, 6);  // First 6 bytes XOR'd
+            if (header_check == packet.data[6]) {
+              ESP_LOGD(TAG, "Received packet: %s (%d bytes)", 
+                       format_hex_pretty(packet.data, packet.size).c_str(), packet.size);
+              xQueueSend(rxQueue_, &packet, portMAX_DELAY);
+            } else {
+              ESP_LOGW(TAG, "Header checksum mismatch: expected 0x%02X, got 0x%02X", 
+                       header_check, packet.data[6]);
+            }
+          } else {
+            ESP_LOGW(TAG, "Trailing size mismatch: expected 0x%02X, got 0x%02X", expected_size, byte);
+          }
+          rx_state = WAIT_SYNC;
           break;
       }
-    } else {
-      rx_state = RESET;
     }
     vTaskDelay(2);
   }
