@@ -1,0 +1,43 @@
+labels:
+  - name: major
+    color: b60205
+    description: Major version bump (breaking changes)
+  - name: minor
+    color: fbca04
+    description: Minor version bump (new features)
+  - name: patch
+    color: 0e8a16
+    description: Patch version bump (bug fixes)
+  - name: bug
+    color: d73a4a
+    description: Something isn't working
+  - name: feature
+    color: a2eeef
+    description: New feature or request
+  - name: enhancement
+    color: 84b6eb
+    description: Improvement to existing functionality
+  - name: documentation
+    color: 0075ca
+    description: Improvements or additions to documentation
+  - name: breaking
+    color: b60205
+    description: Breaking change that requires user action
+  - name: chore
+    color: fef2c0
+    description: Maintenance tasks
+  - name: dependencies
+    color: 0366d6
+    description: Pull requests that update a dependency file
+  - name: skip-changelog
+    color: ededed
+    description: Exclude from release notes
+  - name: help wanted
+    color: 008672
+    description: Extra attention is needed
+  - name: question
+    color: d876e3
+    description: Further information is requested
+  - name: wontfix
+    color: ffffff
+    description: This will not be worked on

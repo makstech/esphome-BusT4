@@ -1,8 +1,31 @@
-.esphome
-.vscode
+# ESPHome build artifacts
+.esphome/
+.pioenvs/
+.piolibdeps/
 
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets (never commit!)
 secrets.yaml
 
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyo
+.Python
+env/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+*_backup.bin

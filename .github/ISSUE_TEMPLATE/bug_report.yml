@@ -1,0 +1,58 @@
+name: Bug Report
+description: Report a bug or issue
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug!
+        
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+      description: What hardware are you using?
+      placeholder: "Nice BiDi-WiFi / ESP32 + SN65HVD230 / etc."
+    validations:
+      required: true
+      
+  - type: input
+    id: controller
+    attributes:
+      label: Nice Controller Model
+      description: What Nice controller do you have?
+      placeholder: "Robus 600 / RUN1200 / FILO400 / etc."
+    validations:
+      required: true
+      
+  - type: input
+    id: esphome
+    attributes:
+      label: ESPHome Version
+      description: What version of ESPHome are you using?
+      placeholder: "2024.12.0"
+    validations:
+      required: true
+      
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: What happened? What did you expect?
+    validations:
+      required: true
+      
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Your ESPHome YAML configuration (remove secrets)
+      render: yaml
+      
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log output
+      render: text

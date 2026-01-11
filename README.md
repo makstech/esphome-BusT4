@@ -1,39 +1,104 @@
-Nice Bus-T4 ESPHome component
+# Nice Bus-T4 ESPHome Component
 
-ESPHome component for controlling Nice gate motors via the Bus-T4 protocol using a CAN transceiver.
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![ESPHome](https://img.shields.io/badge/ESPHome-2024.6+-green.svg)](https://esphome.io/)
+[![ESP32](https://img.shields.io/badge/ESP32-supported-brightgreen.svg)](https://www.espressif.com/en/products/socs/esp32)
+
+ESPHome component for integrating **Nice gate and garage door automation** into Home Assistant via the Bus-T4 protocol.
+
+> **Perfect for Nice BiDi-WiFi module owners** who want local control without cloud dependency!
 
 ## Features
 
-- Control Nice gates (open/close/stop) via Home Assistant
-- Time-based position tracking for gates without encoder feedback
-- **Auto-learning of open/close timing** - no manual measurement needed
-- Learned timing values persist across reboots (stored in flash)
-- Automatic device discovery on the bus
-- Compatible with ESPHome 2025.12.5+
+- 🚪 **Full gate control** - Open, close, stop, and partial opening commands
+- 📊 **Real-time status** - Opening, closing, stopped, fully open/closed states
+- 📏 **Position tracking** - Time-based position estimation (0-100%)
+- 🧠 **Auto-learning** - Automatically learns and le-learns your gate's open/close timing
+- 🏠 **Home Assistant** - Native ESPHome integration
+- 🔒 **Local control** - No cloud, no internet required
 
-## Hardware Setup
+## Supported Hardware
 
-This component requires a CAN transceiver (e.g., SN65HVD230) connected to the Nice gate controller's Bus-T4 port.
+### Nice BiDi-WiFi Module (Recommended)
 
-## Configuration
+The [Nice BiDi-WiFi](https://www.niceforyou.com/uk/nicepost/bidi-wifi-new-pocket-programming-interface) module contains an ESP32-WROOM and connects directly to your Nice gate controller. By flashing ESPHome firmware, you get local Home Assistant control.
+
+### Compatible Nice Controllers
+
+Tested with:
+- Nice Robus (RBS400, RBS600, RBS800, etc.)
+
+Should work with any Nice controller that has a Bus-T4 port (RJ11 connector).
+
+## Quick Start
+
+### Flash Nice BiDi-WiFi Module
+
+#### Step 1: Backup Original Firmware
+
+**⚠️ Important:** Before flashing, backup the original firmware so you can restore it if needed.
+
+```bash
+esptool.py --port /dev/ttyUSB0 read_flash 0x0 0x400000 bidiwifi_backup.bin
+```
+
+#### Step 2: Connect for Flashing
+
+Use the test points on the BiDi-WiFi board:
+
+![BiDi-WiFi Pinout](img/bidiwifi-pinout.jpg)
+
+| Test Point | Connect To |
+|------------|------------|
+| Tx         | USB-TTL RX |
+| Rx         | USB-TTL TX |
+| IO0        | GND (hold during reset to enter flash mode) |
+| EN         | 3.3V |
+| +3V3       | 3.3V |
+| GND        | Ground |
+
+#### Step 3: Create Configuration
+
+Create a `gate.yaml` file:
 
 ```yaml
+esphome:
+  name: gate
+  friendly_name: Gate
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
 logger:
-  baud_rate: 0
+  baud_rate: 0  # Disable serial logging (UART used for Bus-T4)
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Gate Fallback"
+    password: !secret fallback_password
 
 external_components:
   - source:
       type: git
       url: https://github.com/makstech/esphome-BusT4
-    components: [ bus_t4 ]
-    refresh: 0s
+    components: [bus_t4]
 
 uart:
-  - id: t4_uart
-    tx_pin: GPIO21
-    rx_pin: GPIO18
-    baud_rate: 19200
-    debug:
+  tx_pin: GPIO21
+  rx_pin: GPIO18
+  baud_rate: 19200
 
 bus_t4:
   id: bus
@@ -42,55 +107,140 @@ cover:
   - platform: bus_t4
     name: "Gate"
     id: gate
-    # Auto-learn timing (default: true)
-    # Learns open/close duration by observing complete cycles
-    auto_learn_timing: true
-    # Initial/fallback values (will be overwritten when auto-learning completes)
-    open_duration: 20s
-    close_duration: 20s
+```
+
+#### Step 4: Flash and Connect
+
+```bash
+esphome run gate.yaml
+```
+
+## Configuration
+
+### Full Example
+
+```yaml
+external_components:
+  - source:
+      type: git
+      url: https://github.com/makstech/esphome-BusT4
+    components: [bus_t4]
+
+uart:
+  tx_pin: GPIO21
+  rx_pin: GPIO18
+  baud_rate: 19200
+
+bus_t4:
+  id: bus
+  address: 0x5090  # Optional: custom device address
+
+cover:
+  - platform: bus_t4
+    name: "Gate"
+    id: gate
+    auto_learn_timing: true       # Auto-learn open/close duration
+    open_duration: 20s            # Initial/fallback open time
+    close_duration: 20s           # Initial/fallback close time
+    position_report_interval: 1s  # Position update rate
+
+# Optional: Additional control buttons
+button:
+  - platform: template
+    name: "Partial Open"
+    icon: "mdi:gate-arrow-right"
+    on_press:
+      - lambda: id(gate).send_cmd(CMD_OPEN_PARTIAL_1);
+
+  - platform: template
+    name: "Step-by-Step"
+    icon: "mdi:gate"
+    on_press:
+      - lambda: id(gate).send_cmd(CMD_STEP);
 ```
 
 ### Configuration Variables
 
-- **name** (*Required*, string): The name for this cover.
-- **auto_learn_timing** (*Optional*, boolean): Automatically learn open/close durations by observing complete movement cycles. Learned values are saved to flash. Default: `true`
-- **open_duration** (*Optional*, time): Initial/fallback time for gate to fully open. Will be overwritten by auto-learning. Default: 20s
-- **close_duration** (*Optional*, time): Initial/fallback time for gate to fully close. Will be overwritten by auto-learning. Default: 20s
+#### bus_t4 Component
 
-## Position Tracking
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `address` | hex | `0x5090` | Device address on the bus |
 
-Since many Nice controllers don't report encoder positions over the bus, this component uses time-based position estimation.
+#### Cover Platform
 
-### Auto-Learning (Recommended)
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `name` | string | *Required* | Name for Home Assistant |
+| `auto_learn_timing` | boolean | `true` | Auto-learn open/close duration |
+| `open_duration` | time | `20s` | Initial/fallback time to fully open |
+| `close_duration` | time | `20s` | Initial/fallback time to fully close |
+| `position_report_interval` | time | `1s` | How often to update position during movement |
 
-With `auto_learn_timing: true` (default), the component automatically learns your gate's timing:
+### Available Commands
 
-1. **Learning trigger**: When the gate performs a complete movement (fully closed → fully open, or vice versa), the duration is measured
-2. **Persistence**: Learned values are stored in flash and survive reboots
-3. **Adaptive**: If the timing deviates by more than 10% from the stored value, the new timing is saved
-4. **Validation**: Only durations between 3 seconds and 5 minutes are accepted
+Use in lambdas with `id(gate).send_cmd(COMMAND)`:
 
-Simply operate your gate normally and the timing will be learned automatically!
+| Command | Description |
+|---------|-------------|
+| `CMD_OPEN` | Open gate |
+| `CMD_CLOSE` | Close gate |
+| `CMD_STOP` | Stop movement |
+| `CMD_STEP` | Step-by-step (toggle) |
+| `CMD_OPEN_PARTIAL_1` | Partial open position 1 |
+| `CMD_OPEN_PARTIAL_2` | Partial open position 2 |
+| `CMD_OPEN_PARTIAL_3` | Partial open position 3 |
 
-### Manual Configuration
+## How Position Tracking Works
 
-If you prefer to set timing manually, disable auto-learning:
+Since Nice controllers don't report encoder positions over Bus-T4, this component uses **time-based position estimation**:
 
-```yaml
-cover:
-  - platform: bus_t4
-    name: "Gate"
-    auto_learn_timing: false
-    open_duration: 18s   # Measure with a stopwatch
-    close_duration: 17s
-```
+1. **Auto-Learning**: When the gate performs a complete movement (fully closed → fully open or vice versa), the duration is measured and saved
+2. **Position Calculation**: During movement, position is calculated based on elapsed time
+3. **Persistence**: Learned durations are stored in flash and survive reboots
+4. **Adaptive**: If timing deviates >10% from stored value, it's automatically updated
 
-## Nice Resources
+### Learning Requirements
 
-* [TTPCI Protocol](https://www.niceforyou.com/sites/default/files/upload/manuals/IS0326A00MM.pdf)
-* [DMBM Integration Protocol](https://www.niceforyou.com/sites/default/files/upload/manuals/nice_dmbm_integration_protocol.pdf)
+- Only learns from **complete** movements (end-to-end)
+- Duration must be between 3 seconds and 5 minutes
+- Interrupted movements don't update learned values
 
-## Related Projects
+## Troubleshooting
 
-* https://github.com/gashtaan/nice-bidiwifi-firmware
-* https://github.com/pruwait/Nice_BusT4
+### Position not updating
+
+1. Wait for a complete open/close cycle for auto-learning
+2. Check logs for "Learned new open/close duration" messages
+3. Manually set `open_duration` and `close_duration` if auto-learning fails
+
+### BiDi-WiFi won't enter flash mode
+
+1. Hold IO0 to GND
+2. Briefly disconnect EN from +3V3 (reset)
+3. Release IO0
+4. Start flashing immediately
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Submit a pull request
+
+## Credits
+
+- Original Bus-T4 work by [@pruwait](https://github.com/pruwait/Nice_BusT4)
+- BiDi-WiFi firmware by [@gashtaan](https://github.com/gashtaan/nice-bidiwifi-firmware)
+- Initial ESPHome ESP32 PoC by [@andrein](https://github.com/andrein/esphome-BusT4)
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+
+## Related Resources
+
+- [Home Assistant Community Discussion](https://community.home-assistant.io/t/nice-app-with-bidi-wifi-gate-automation/606241)
+- [Nice BiDi-WiFi Product Page](https://www.niceforyou.com/uk/nicepost/bidi-wifi-new-pocket-programming-interface)
+- [ESPHome Documentation](https://esphome.io/)
