@@ -57,8 +57,8 @@ void BusT4Cover::loop() {
     // Update internal position
     this->position = new_position;
     
-    // Rate-limit position publishing to max once per second
-    if (now - last_position_publish_ >= 1000) {
+    // Rate-limit position publishing
+    if (now - last_position_publish_ >= position_report_interval_) {
       last_position_publish_ = now;
       publish_state_if_changed();
     }

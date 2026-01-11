@@ -45,6 +45,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   void set_open_duration(uint32_t duration) { open_duration_ = duration; }
   void set_close_duration(uint32_t duration) { close_duration_ = duration; }
   void set_auto_learn_timing(bool enable) { auto_learn_timing_ = enable; }
+  void set_position_report_interval(uint32_t interval) { position_report_interval_ = interval; }
 
  protected:
   void control(const cover::CoverCall &call) override;
@@ -99,6 +100,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   // Timing
   uint32_t last_position_update_{0};
   uint32_t last_position_publish_{0};  // Rate-limit position publishing
+  uint32_t position_report_interval_{1000};  // Position report rate (ms)
   uint32_t last_init_attempt_{0};
   
   // State tracking for change detection
