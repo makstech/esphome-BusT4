@@ -24,17 +24,21 @@ void BusT4Cover::setup() {
 void BusT4Cover::loop() {
   uint32_t now = millis();
   
-  // Try to initialize device if not yet done
-  if (!init_ok_ && (now - last_init_attempt_ > 10000)) {
-    last_init_attempt_ = now;
-    init_device();
-  }
-  
-  // Request position periodically while moving
-  if (init_ok_ && current_operation != cover::COVER_OPERATION_IDLE) {
-    if (now - last_position_request_ > POSITION_UPDATE_INTERVAL) {
+  // Initialization state machine - send one request at a time with delays
+  if (!init_ok_) {
+    if (now - last_init_attempt_ > 2000) {  // 2 second between init steps
+      last_init_attempt_ = now;
+      init_device();
+    }
+  } else {
+    // After init, periodically request status
+    if (now - last_position_request_ > 5000) {
       last_position_request_ = now;
-      request_position();
+      if (current_operation != cover::COVER_OPERATION_IDLE) {
+        request_position();
+      } else {
+        request_status();
+      }
     }
   }
 }
@@ -287,13 +291,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
         ESP_LOGI(TAG, "Found motor controller at 0x%02X.%02X", 
                  packet.header.from.address, packet.header.from.endpoint);
         target_address_ = packet.header.from;
-        init_ok_ = true;
-        
-        // Now request additional info
-        send_info_request(FOR_CU, INF_TYPE);
-        send_info_request(FOR_CU, INF_POS_MAX);
-        send_info_request(FOR_CU, INF_POS_MIN);
-        send_info_request(FOR_CU, INF_STATUS);
+        init_step_ = 1;  // Move to next init step, don't flood with requests
       }
       break;
     }
@@ -385,27 +383,45 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
 }
 
 void BusT4Cover::init_device() {
-  ESP_LOGI(TAG, "Initializing device...");
+  // State machine for gradual initialization
+  // Each call advances one step to avoid flooding the bus
   
-  // Broadcast: Who is on the bus?
-  T4Source broadcast{0xFF, 0xFF};
-  uint8_t who_msg[5] = { FOR_ALL, INF_WHO, REQ_GET, 0x00, 0x00 };
-  T4Packet who_packet(broadcast, parent_->get_address(), DMP, who_msg, sizeof(who_msg));
-  write(&who_packet, 0);
-  
-  // If we already have a target, request info
-  if (init_ok_) {
-    // Request motor type
-    send_info_request(FOR_CU, INF_TYPE);
+  switch (init_step_) {
+    case 0: {
+      // Step 0: Discover devices on the bus
+      ESP_LOGI(TAG, "Initializing device - discovering...");
+      T4Source broadcast{0xFF, 0xFF};
+      uint8_t who_msg[5] = { FOR_ALL, INF_WHO, REQ_GET, 0x00, 0x00 };
+      T4Packet who_packet(broadcast, parent_->get_address(), DMP, who_msg, sizeof(who_msg));
+      write(&who_packet, 0);
+      break;
+    }
     
-    // Request position limits
-    send_info_request(FOR_CU, INF_POS_MAX);
-    send_info_request(FOR_CU, INF_POS_MIN);
-    send_info_request(FOR_CU, INF_MAX_OPN);
-    
-    // Request current status and position
-    request_status();
-    request_position();
+    case 1:
+      // Step 1: Request motor type
+      ESP_LOGD(TAG, "Init step 1: requesting motor type");
+      send_info_request(FOR_CU, INF_TYPE);
+      init_step_ = 2;
+      break;
+      
+    case 2:
+      // Step 2: Request status
+      ESP_LOGD(TAG, "Init step 2: requesting status");
+      send_info_request(FOR_CU, INF_STATUS);
+      init_step_ = 3;
+      break;
+      
+    case 3:
+      // Step 3: Initialization complete
+      ESP_LOGI(TAG, "Device initialization complete");
+      init_ok_ = true;
+      init_step_ = 4;
+      publish_state_if_changed();
+      break;
+      
+    default:
+      // Already initialized
+      break;
   }
 }
 

@@ -47,6 +47,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   // Device initialization
   void init_device();
   bool init_ok_{false};
+  uint8_t init_step_{0};  // Initialization state machine step
   
   // Position tracking
   uint16_t pos_max_{2048};    // Encoder position for fully open
