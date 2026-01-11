@@ -11,7 +11,6 @@ namespace esphome::bus_t4 {
 class BusT4Component final : public Component, public uart::UARTDevice {
  public:
   BusT4Component() = default;
-  ~BusT4Component() override = default;
 
   void setup() override;
   void dump_config() override;
