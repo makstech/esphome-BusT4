@@ -499,6 +499,8 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
         if (awaiting_confirmation_) {
           ESP_LOGI(TAG, "Confirmed by limit switch: gate is fully closed");
         }
+        awaiting_confirmation_ = false;
+        publish_state_if_changed();
       } else if (open_limit) {
         ESP_LOGI(TAG, "Limit switch: OPEN");
         this->position = cover::COVER_OPEN;
@@ -506,18 +508,12 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
         if (awaiting_confirmation_) {
           ESP_LOGI(TAG, "Confirmed by limit switch: gate is fully open");
         }
+        awaiting_confirmation_ = false;
+        publish_state_if_changed();
       } else {
         ESP_LOGD(TAG, "No limit switch active (io_byte0=0x%02X, io_byte3=0x%02X)", io_byte0, io_byte3);
-        // If awaiting confirmation, request status as fallback
-        if (awaiting_confirmation_) {
-          ESP_LOGD(TAG, "No limit switch, requesting status as fallback");
-          send_info_request(FOR_CU, INF_STATUS);
-          break;  // Don't clear awaiting flag yet
-        }
-      }
-      
-      awaiting_confirmation_ = false;
-      publish_state_if_changed();
+        // No limit switch info - INF_STATUS will handle confirmation
+      };
       break;
     }
   }
@@ -578,10 +574,11 @@ void BusT4Cover::request_status() {
 
 void BusT4Cover::request_status_confirmation() {
   if (parent_ == nullptr) return;
-  ESP_LOGD(TAG, "Requesting I/O state for limit switch confirmation");
+  ESP_LOGD(TAG, "Requesting I/O state and status for confirmation");
   awaiting_confirmation_ = true;
-  // Request I/O state first - limit switches are most reliable
+  // Request both - I/O for limit switches (if supported), status as fallback
   send_info_request(FOR_CU, INF_IO);
+  send_info_request(FOR_CU, INF_STATUS);
 }
 
 void BusT4Cover::update_position(uint16_t encoder_pos) {
