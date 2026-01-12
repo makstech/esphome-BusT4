@@ -3,6 +3,7 @@
 #include "esphome/components/cover/cover.h"
 #include "esphome/core/preferences.h"
 #include "../bus_t4.h"
+#include <string>
 
 namespace esphome::bus_t4 {
 
@@ -28,6 +29,12 @@ struct LearnedDurations {
   bool valid;  // Set to true after first successful learning
 };
 
+// Known product identifiers for device-specific handling
+// WLA1 = Walky (uses 1-byte position)
+static const std::string PRODUCT_WALKY = "WLA1";
+// ROBUSHSR10 = Robus HSR10 (no position query during movement)
+static const std::string PRODUCT_ROBUS = "ROBUSHSR10";
+
 class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
  public:
   BusT4Cover() = default;
@@ -41,11 +48,20 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   // Called when a packet is received from the bus
   void on_packet(const T4Packet &packet) override;
   
-  // Configuration setters
+  // Configuration setters (from YAML)
   void set_open_duration(uint32_t duration) { open_duration_ = duration; }
   void set_close_duration(uint32_t duration) { close_duration_ = duration; }
   void set_auto_learn_timing(bool enable) { auto_learn_timing_ = enable; }
   void set_position_report_interval(uint32_t interval) { position_report_interval_ = interval; }
+  
+  // Motor controller configuration (runtime)
+  // These send commands to the motor controller to change its settings
+  void set_auto_close(bool enable);      // L1 - Auto-close after opening
+  void set_photo_close(bool enable);     // L2 - Close after photo sensor clears
+  void set_always_close(bool enable);    // L3 - Always close (ignore hold-open)
+  void set_standby(bool enable);         // Standby mode (power saving)
+  void set_peak_mode(bool enable);       // Peak mode (faster operation)
+  void set_pre_flash(bool enable);       // Pre-flash warning light
 
  protected:
   void control(const cover::CoverCall &call) override;
@@ -54,6 +70,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   // Parse different packet types
   void parse_dep_packet(const T4Packet &packet);
   void parse_dmp_packet(const T4Packet &packet);
+  void parse_oxi_packet(const T4Packet &packet);  // OXI receiver (remote control)
   
   // Request current position from controller
   void request_position();
@@ -71,6 +88,13 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   void init_device();
   bool init_ok_{false};
   uint8_t init_step_{0};  // Initialization state machine step
+  
+  // Device identification - for device-specific handling
+  std::string product_name_;           // Product name (e.g., "WLA1", "ROBUSHSR10")
+  std::string manufacturer_;           // Manufacturer name
+  std::string firmware_version_;       // Firmware version string
+  bool is_walky_{false};               // Walky gates: 1-byte position values
+  bool is_robus_{false};               // Robus gates: no position query during movement
   
   // Position tracking
   uint16_t pos_max_{2048};    // Encoder position for fully open
@@ -102,6 +126,11 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   uint32_t last_position_publish_{0};  // Rate-limit position publishing
   uint32_t position_report_interval_{1000};  // Position report rate (ms)
   uint32_t last_init_attempt_{0};
+  uint32_t last_status_refresh_{0};  // Periodic status refresh
+  
+  // Position source tracking
+  bool has_encoder_{false};          // True if device reports encoder positions
+  uint32_t last_encoder_update_{0};  // Last time we got encoder data
   
   // State tracking for change detection
   cover::CoverOperation last_published_op_{cover::COVER_OPERATION_IDLE};

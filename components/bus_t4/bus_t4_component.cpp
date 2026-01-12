@@ -110,10 +110,21 @@ void BusT4Component::rxTask() {
 }
 
 void BusT4Component::txTask() {
+  TickType_t last_tx_time = 0;
+  const TickType_t TX_MIN_INTERVAL = pdMS_TO_TICKS(100);  // Minimum 100ms between transmissions
+  
   for (;;) {
     T4Packet packet;
 
-    if (xQueueReceive(txQueue_, &packet, 0)) {
+    // Wait for packet with timeout (allows checking for queue items periodically)
+    if (xQueueReceive(txQueue_, &packet, pdMS_TO_TICKS(10))) {
+      // Ensure minimum interval between transmissions
+      TickType_t now = xTaskGetTickCount();
+      TickType_t elapsed = now - last_tx_time;
+      if (elapsed < TX_MIN_INTERVAL) {
+        vTaskDelay(TX_MIN_INTERVAL - elapsed);
+      }
+      
       ESP_LOGD(TAG, "Sending packet: %s", format_hex_pretty(packet.data, packet.size).c_str());
       parent_->write_byte(T4_BREAK);
       parent_->write_byte(T4_SYNC);
@@ -121,8 +132,9 @@ void BusT4Component::txTask() {
       parent_->write_array(packet.data, packet.size);
       parent_->write_byte(packet.size);
       parent_->flush();
+      
+      last_tx_time = xTaskGetTickCount();
     }
-    vTaskDelay(2);
   }
 
   txTask_ = nullptr;

@@ -53,6 +53,12 @@ enum T4Target : uint8_t {
   FOR_OXI = 0x0A,     // For OXI receiver
 };
 
+// OXI receiver commands (byte 10 when target is FOR_OXI)
+enum T4OxiCommand : uint8_t {
+  OXI_REMOTE_LIST = 0x25,   // Remote control list/info
+  OXI_BUTTON_READ = 0x26,   // Button press detected
+};
+
 // Info commands (byte 10 for DMP packets)
 enum T4InfoCommand : uint8_t {
   INF_TYPE = 0x00,       // Motor type
@@ -69,6 +75,16 @@ enum T4InfoCommand : uint8_t {
   INF_POS_MAX = 0x18,    // Open position
   INF_POS_MIN = 0x19,    // Close position
   INF_IO = 0xD1,         // Input/output state (limit switches)
+  
+  // Configuration parameters (settable)
+  CFG_AUTOCLS = 0x80,    // Auto-close (L1) - 0x00=off, 0x01=on
+  CFG_PH_CLS = 0x81,     // Close after photo (L2) - 0x00=off, 0x01=on  
+  CFG_ALW_CLS = 0x82,    // Always close (L3) - 0x00=off, 0x01=on
+  CFG_STANDBY = 0x83,    // Standby mode - 0x00=off, 0x01=on
+  CFG_PEAK = 0x84,       // Peak mode - 0x00=off, 0x01=on
+  CFG_PRE_FLASH = 0x85,  // Pre-flash warning - 0x00=off, 0x01=on
+  CFG_CLOSE_SPEED = 0x90, // Close speed (0-100)
+  CFG_OPEN_SPEED = 0x91,  // Open speed (0-100)
 };
 
 // Request types (byte 11)
@@ -110,6 +126,9 @@ enum T4GateStatus : uint8_t {
   STA_CLOSED = 0x05,
   STA_ENDTIME = 0x06,       // Maneuver ended by timeout
   STA_PART_OPENED = 0x10,   // Partially opened
+  // Alternate status codes used by some controllers (e.g., Road 400)
+  STA_OPENING_ALT = 0x83,   // Opening (alternate)
+  STA_CLOSING_ALT = 0x84,   // Closing (alternate)
 };
 
 // Operation status in RSP packets (byte 11)

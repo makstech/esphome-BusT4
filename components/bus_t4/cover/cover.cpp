@@ -2,6 +2,7 @@
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
 #include <cmath>
+#include <string>
 
 namespace esphome::bus_t4 {
 
@@ -37,6 +38,22 @@ void BusT4Cover::loop() {
     }
   }
   
+  // Periodic status refresh every 10 seconds
+  // This helps recover from missed packets and keeps state in sync
+  if (init_ok_ && (now - last_status_refresh_ > 10000)) {
+    last_status_refresh_ = now;
+    
+    // If idle, request current status
+    if (current_operation == cover::COVER_OPERATION_IDLE) {
+      ESP_LOGV(TAG, "Periodic status refresh");
+      request_status();
+      // Also request position if we have encoder support
+      if (has_encoder_ && !is_robus_) {
+        request_position();
+      }
+    }
+  }
+  
   // Time-based position tracking during movement
   if (movement_start_time_ > 0 && current_operation != cover::COVER_OPERATION_IDLE) {
     uint32_t elapsed = now - movement_start_time_;
@@ -54,13 +71,31 @@ void BusT4Cover::loop() {
       if (new_position < 0.0f) new_position = 0.0f;
     }
     
-    // Update internal position
-    this->position = new_position;
+    // Only use time-based position if we don't have recent encoder data
+    // Encoder data is more accurate, so prioritize it when available
+    bool use_time_based = true;
+    if (has_encoder_ && (now - last_encoder_update_ < 2000)) {
+      // We have recent encoder data, don't override with time-based estimate
+      use_time_based = false;
+    }
+    
+    if (use_time_based) {
+      this->position = new_position;
+    }
     
     // Rate-limit position publishing
     if (now - last_position_publish_ >= position_report_interval_) {
       last_position_publish_ = now;
       publish_state_if_changed();
+    }
+    
+    // Poll encoder position during movement (for devices that support it)
+    // Robus devices don't support position queries during movement
+    if (!is_robus_ && init_ok_) {
+      if (now - last_position_update_ >= POSITION_UPDATE_INTERVAL) {
+        last_position_update_ = now;
+        request_position();
+      }
     }
     
     // Check if we've reached target position (always check, don't rate-limit)
@@ -98,6 +133,32 @@ void BusT4Cover::dump_config() {
     }
     ESP_LOGCONFIG(TAG, "  Motor type: %s", type_str);
     ESP_LOGCONFIG(TAG, "  Position range: %d - %d", pos_min_, pos_max_);
+    
+    // Device identification
+    if (!manufacturer_.empty()) {
+      ESP_LOGCONFIG(TAG, "  Manufacturer: %s", manufacturer_.c_str());
+    }
+    if (!product_name_.empty()) {
+      ESP_LOGCONFIG(TAG, "  Product: %s", product_name_.c_str());
+    }
+    if (!firmware_version_.empty()) {
+      ESP_LOGCONFIG(TAG, "  Firmware: %s", firmware_version_.c_str());
+    }
+    
+    // Device-specific modes
+    if (is_walky_) {
+      ESP_LOGCONFIG(TAG, "  Mode: Walky (1-byte position)");
+    }
+    if (is_robus_) {
+      ESP_LOGCONFIG(TAG, "  Mode: Robus (no position query during movement)");
+    }
+    
+    // Position tracking mode
+    if (has_encoder_) {
+      ESP_LOGCONFIG(TAG, "  Position source: Encoder (primary)");
+    } else {
+      ESP_LOGCONFIG(TAG, "  Position source: Time-based estimation");
+    }
   }
 }
 
@@ -141,6 +202,13 @@ void BusT4Cover::control(const cover::CoverCall &call) {
 }
 
 void BusT4Cover::on_packet(const T4Packet &packet) {
+  // Check if this is an OXI receiver packet (remote control)
+  // These packets have target FOR_OXI (0x0A) in byte 9
+  if (packet.size >= 14 && packet.data[9] == FOR_OXI) {
+    parse_oxi_packet(packet);
+    return;
+  }
+  
   // During initialization, accept packets from any source (for device discovery)
   // After init, only process packets from our target controller
   if (init_ok_ && packet.header.from != target_address_) {
@@ -187,7 +255,7 @@ void BusT4Cover::parse_dep_packet(const T4Packet &packet) {
     // Parse operation status
     switch (status) {
       case STA_OPENING:
-      case 0x83:  // Some controllers use this for opening
+      case STA_OPENING_ALT:  // Alternate code used by Road 400 and others
         ESP_LOGI(TAG, "Gate opening");
         if (current_operation != cover::COVER_OPERATION_OPENING) {
           movement_start_time_ = millis();
@@ -201,7 +269,7 @@ void BusT4Cover::parse_dep_packet(const T4Packet &packet) {
         break;
         
       case STA_CLOSING:
-      case 0x84:  // Some controllers use this for closing
+      case STA_CLOSING_ALT:  // Alternate code used by Road 400 and others
         ESP_LOGI(TAG, "Gate closing");
         if (current_operation != cover::COVER_OPERATION_CLOSING) {
           movement_start_time_ = millis();
@@ -294,17 +362,29 @@ void BusT4Cover::parse_dep_packet(const T4Packet &packet) {
   if (command == STA) {
     uint8_t status = packet.data[DEP_DATA_OFFSET];
     uint16_t pos = 0;
-    if (packet.size >= 12) {
-      pos = (packet.data[DEP_DATA_OFFSET + 1] << 8) | packet.data[DEP_DATA_OFFSET + 2];
+    
+    // Position data handling varies by device type
+    if (is_walky_) {
+      // Walky uses 1-byte position
+      if (packet.size >= 11) {
+        pos = packet.data[DEP_DATA_OFFSET + 1];
+      }
+    } else {
+      // Standard 2-byte big-endian position
+      if (packet.size >= 12) {
+        pos = (packet.data[DEP_DATA_OFFSET + 1] << 8) | packet.data[DEP_DATA_OFFSET + 2];
+      }
     }
     
     ESP_LOGD(TAG, "STA packet: status=0x%02X, pos=%d", status, pos);
     
     switch (status) {
       case STA_OPENING:
+      case STA_OPENING_ALT:  // Alternate code used by Road 400 and others
         current_operation = cover::COVER_OPERATION_OPENING;
         break;
       case STA_CLOSING:
+      case STA_CLOSING_ALT:  // Alternate code used by Road 400 and others
         current_operation = cover::COVER_OPERATION_CLOSING;
         break;
       case STA_OPENED:
@@ -357,6 +437,18 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
   if (flags != RSP_GET_COMPLETE && flags != RSP_GET_INCOMPLETE) {
     ESP_LOGV(TAG, "Ignoring non-GET response: flags=0x%02X", flags);
     return;
+  }
+  
+  // Handle incomplete responses - request continuation with new offset
+  // The sequence byte contains the next offset to request
+  if (flags == RSP_GET_INCOMPLETE) {
+    ESP_LOGD(TAG, "Incomplete response for cmd=0x%02X, requesting continuation at offset %d", 
+             command, sequence);
+    // Build continuation request with the next offset
+    uint8_t cont_msg[5] = { device, command, REQ_GET, sequence, 0x00 };
+    T4Packet cont_packet(target_address_, parent_->get_address(), DMP, cont_msg, sizeof(cont_msg));
+    write(&cont_packet, 0);
+    // Still process the partial data we received
   }
   
   // Process based on command type
@@ -433,9 +525,16 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     }
     
     case INF_CUR_POS: {
-      // Current position response (2 bytes, big endian)
-      uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
-      ESP_LOGD(TAG, "Current position: %d", pos);
+      // Current position response
+      // Walky uses 1-byte position, others use 2 bytes big-endian
+      uint16_t pos;
+      if (is_walky_) {
+        pos = packet.data[DATA_OFFSET];
+        ESP_LOGD(TAG, "Current position (Walky 1-byte): %d", pos);
+      } else {
+        pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+        ESP_LOGD(TAG, "Current position: %d", pos);
+      }
       update_position(pos);
       break;
     }
@@ -459,8 +558,14 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     }
     
     case INF_MAX_OPN: {
-      // Maximum encoder position (2 bytes, big endian)
-      uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+      // Maximum encoder position
+      // Walky uses 1-byte, others use 2 bytes big-endian
+      uint16_t pos;
+      if (is_walky_) {
+        pos = packet.data[DATA_OFFSET];
+      } else {
+        pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+      }
       ESP_LOGI(TAG, "Max encoder position: %d", pos);
       if (pos > 0) {
         pos_max_ = pos;
@@ -470,52 +575,158 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     
     case INF_IO: {
       // Input/Output state - includes limit switches
+      // Limit switch state is at data[16] = DATA_OFFSET + 4
+      // This is consistent across most Nice controllers (pruwait's findings)
+      const uint8_t IO_LIMIT_OFFSET = DATA_OFFSET + 4;  // = 16
+      
       // Log raw data for debugging
       ESP_LOGD(TAG, "INF_IO raw: %02X %02X %02X %02X %02X",
                packet.data[DATA_OFFSET], packet.data[DATA_OFFSET + 1],
                packet.data[DATA_OFFSET + 2], packet.data[DATA_OFFSET + 3],
                packet.data[DATA_OFFSET + 4]);
       
-      // I/O data structure varies by controller, check multiple bytes
-      uint8_t io_byte0 = packet.data[DATA_OFFSET];
-      uint8_t io_byte3 = packet.data[DATA_OFFSET + 3];
-      
-      // Check for limit switch states (try both common positions)
-      bool open_limit = false;
-      bool close_limit = false;
-      
-      // Some controllers use byte 0, others use byte 3
-      if (io_byte0 == 0x01 || io_byte3 == 0x01) {
-        close_limit = true;
-      }
-      if (io_byte0 == 0x02 || io_byte3 == 0x02) {
-        open_limit = true;
-      }
-      
-      if (close_limit) {
-        ESP_LOGI(TAG, "Limit switch: CLOSED");
-        this->position = cover::COVER_CLOSED;
-        current_operation = cover::COVER_OPERATION_IDLE;
-        if (awaiting_confirmation_) {
-          ESP_LOGI(TAG, "Confirmed by limit switch: gate is fully closed");
+      // Check if we have enough data for the limit switch byte
+      if (packet.size > IO_LIMIT_OFFSET) {
+        uint8_t limit_state = packet.data[IO_LIMIT_OFFSET];
+        
+        switch (limit_state) {
+          case 0x00:
+            ESP_LOGD(TAG, "INF_IO: No limit switch active");
+            // No limit switch info - INF_STATUS will handle confirmation
+            break;
+          case 0x01:
+            ESP_LOGI(TAG, "Limit switch: CLOSED");
+            this->position = cover::COVER_CLOSED;
+            current_operation = cover::COVER_OPERATION_IDLE;
+            if (awaiting_confirmation_) {
+              ESP_LOGI(TAG, "Confirmed by limit switch: gate is fully closed");
+            }
+            awaiting_confirmation_ = false;
+            publish_state_if_changed();
+            break;
+          case 0x02:
+            ESP_LOGI(TAG, "Limit switch: OPEN");
+            this->position = cover::COVER_OPEN;
+            current_operation = cover::COVER_OPERATION_IDLE;
+            if (awaiting_confirmation_) {
+              ESP_LOGI(TAG, "Confirmed by limit switch: gate is fully open");
+            }
+            awaiting_confirmation_ = false;
+            publish_state_if_changed();
+            break;
+          default:
+            ESP_LOGD(TAG, "INF_IO: Unknown limit state 0x%02X", limit_state);
+            break;
         }
-        awaiting_confirmation_ = false;
-        publish_state_if_changed();
-      } else if (open_limit) {
-        ESP_LOGI(TAG, "Limit switch: OPEN");
-        this->position = cover::COVER_OPEN;
-        current_operation = cover::COVER_OPERATION_IDLE;
-        if (awaiting_confirmation_) {
-          ESP_LOGI(TAG, "Confirmed by limit switch: gate is fully open");
-        }
-        awaiting_confirmation_ = false;
-        publish_state_if_changed();
       } else {
-        ESP_LOGD(TAG, "No limit switch active (io_byte0=0x%02X, io_byte3=0x%02X)", io_byte0, io_byte3);
-        // No limit switch info - INF_STATUS will handle confirmation
-      };
+        ESP_LOGW(TAG, "INF_IO packet too short for limit switch data");
+      }
       break;
     }
+    
+    case INF_MAN: {
+      // Manufacturer name response (null-terminated string)
+      size_t str_len = packet.size - DATA_OFFSET - 1;  // -1 for checksum
+      if (str_len > 0 && str_len < 64) {
+        manufacturer_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
+        // Remove null terminators and trailing garbage
+        size_t null_pos = manufacturer_.find('\0');
+        if (null_pos != std::string::npos) {
+          manufacturer_.resize(null_pos);
+        }
+        ESP_LOGI(TAG, "Manufacturer: %s", manufacturer_.c_str());
+      }
+      break;
+    }
+    
+    case INF_PRD: {
+      // Product name response (null-terminated string)
+      size_t str_len = packet.size - DATA_OFFSET - 1;  // -1 for checksum
+      if (str_len > 0 && str_len < 64) {
+        product_name_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
+        // Remove null terminators and trailing garbage
+        size_t null_pos = product_name_.find('\0');
+        if (null_pos != std::string::npos) {
+          product_name_.resize(null_pos);
+        }
+        ESP_LOGI(TAG, "Product: %s", product_name_.c_str());
+        
+        // Detect device-specific modes based on product name
+        if (product_name_.find(PRODUCT_WALKY) != std::string::npos) {
+          is_walky_ = true;
+          ESP_LOGI(TAG, "Detected Walky device - using 1-byte position mode");
+        }
+        if (product_name_.find(PRODUCT_ROBUS) != std::string::npos) {
+          is_robus_ = true;
+          ESP_LOGI(TAG, "Detected Robus device - position queries disabled during movement");
+        }
+      }
+      break;
+    }
+    
+    case INF_FRM: {
+      // Firmware version response (null-terminated string)
+      size_t str_len = packet.size - DATA_OFFSET - 1;  // -1 for checksum
+      if (str_len > 0 && str_len < 64) {
+        firmware_version_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
+        // Remove null terminators and trailing garbage
+        size_t null_pos = firmware_version_.find('\0');
+        if (null_pos != std::string::npos) {
+          firmware_version_.resize(null_pos);
+        }
+        ESP_LOGI(TAG, "Firmware: %s", firmware_version_.c_str());
+      }
+      break;
+    }
+  }
+}
+
+void BusT4Cover::parse_oxi_packet(const T4Packet &packet) {
+  // OXI receiver packets contain remote control information
+  // Format (from pruwait):
+  //   data[9] = FOR_OXI (0x0A)
+  //   data[10] = command (0x25 = remote list, 0x26 = button read)
+  //   data[11] = subcommand
+  //   data[12] = sequence/length
+  //   data[13] = status
+  //   data[14+] = payload
+  
+  if (packet.size < 15) return;
+  
+  uint8_t command = packet.data[10];
+  uint8_t subcommand = packet.data[11];
+  uint8_t sequence = packet.data[12];
+  uint8_t status = packet.data[13];
+  
+  // Only process successful responses
+  if (status != ERR_NONE) {
+    return;
+  }
+  
+  // Payload starts at data[14]
+  const uint8_t* payload = &packet.data[14];
+  
+  // Remote control list packet (0x25)
+  // Contains info about a remote that triggered an action
+  if (command == OXI_REMOTE_LIST && subcommand == 0x01 && sequence == 0x0A) {
+    // Remote serial number (4 bytes, little endian)
+    uint32_t remote_serial = (payload[5] << 24) | (payload[4] << 16) | (payload[3] << 8) | payload[2];
+    uint8_t remote_command = payload[8] >> 4;  // High nibble
+    uint8_t remote_button = payload[5] >> 4;   // High nibble of byte 5
+    uint8_t remote_mode = payload[7] + 1;
+    uint8_t press_count = payload[6];
+    
+    ESP_LOGI(TAG, "Remote: serial=%08X, cmd=%d, btn=%d, mode=%d, presses=%d",
+             remote_serial, remote_command, remote_button, remote_mode, press_count);
+  }
+  
+  // Button read packet (0x26, 0x41)
+  // Direct button press detection
+  if (command == OXI_BUTTON_READ && subcommand == 0x41 && sequence == 0x08) {
+    uint8_t button = payload[0] >> 4;  // High nibble
+    uint32_t remote_serial = (payload[0] & 0x0F) | (payload[1] << 4) | (payload[2] << 12) | (payload[3] << 20);
+    
+    ESP_LOGI(TAG, "Button press: btn=%d, remote=%05X", button, remote_serial);
   }
 }
 
@@ -542,17 +753,53 @@ void BusT4Cover::init_device() {
       break;
       
     case 2:
-      // Step 2: Request status
-      ESP_LOGD(TAG, "Init step 2: requesting status");
-      send_info_request(FOR_CU, INF_STATUS);
+      // Step 2: Request product name (for device-specific behavior detection)
+      ESP_LOGD(TAG, "Init step 2: requesting product name");
+      send_info_request(FOR_ALL, INF_PRD);
       init_step_ = 3;
       break;
       
     case 3:
-      // Step 3: Initialization complete
+      // Step 3: Request manufacturer
+      ESP_LOGD(TAG, "Init step 3: requesting manufacturer");
+      send_info_request(FOR_ALL, INF_MAN);
+      init_step_ = 4;
+      break;
+      
+    case 4:
+      // Step 4: Request firmware version
+      ESP_LOGD(TAG, "Init step 4: requesting firmware version");
+      send_info_request(FOR_ALL, INF_FRM);
+      init_step_ = 5;
+      break;
+      
+    case 5:
+      // Step 5: Request open/close positions
+      ESP_LOGD(TAG, "Init step 5: requesting position limits");
+      send_info_request(FOR_CU, INF_POS_MAX);
+      send_info_request(FOR_CU, INF_POS_MIN);
+      init_step_ = 6;
+      break;
+      
+    case 6:
+      // Step 6: Request max encoder position
+      ESP_LOGD(TAG, "Init step 6: requesting max encoder position");
+      send_info_request(FOR_CU, INF_MAX_OPN);
+      init_step_ = 7;
+      break;
+      
+    case 7:
+      // Step 7: Request status
+      ESP_LOGD(TAG, "Init step 7: requesting status");
+      send_info_request(FOR_CU, INF_STATUS);
+      init_step_ = 8;
+      break;
+      
+    case 8:
+      // Step 8: Initialization complete
       ESP_LOGI(TAG, "Device initialization complete");
       init_ok_ = true;
-      init_step_ = 4;
+      init_step_ = 9;
       publish_state_if_changed();
       break;
       
@@ -584,6 +831,10 @@ void BusT4Cover::request_status_confirmation() {
 void BusT4Cover::update_position(uint16_t encoder_pos) {
   pos_current_ = encoder_pos;
   
+  // Mark that we have encoder support and update timestamp
+  has_encoder_ = true;
+  last_encoder_update_ = millis();
+  
   // Convert encoder position to percentage
   if (pos_max_ > pos_min_) {
     float pos = static_cast<float>(encoder_pos - pos_min_) / static_cast<float>(pos_max_ - pos_min_);
@@ -595,7 +846,7 @@ void BusT4Cover::update_position(uint16_t encoder_pos) {
     }
     
     this->position = pos;
-    ESP_LOGD(TAG, "Position: %d -> %.1f%%", encoder_pos, pos * 100);
+    ESP_LOGD(TAG, "Encoder position: %d -> %.1f%%", encoder_pos, pos * 100);
   }
   
   // Check if we've reached target position
@@ -754,6 +1005,39 @@ void BusT4Cover::load_learned_durations() {
   } else {
     ESP_LOGD(TAG, "No saved timing data found, using defaults");
   }
+}
+
+// Motor controller configuration commands (SET)
+// These change the motor controller's settings via the Nice Bus T4 protocol
+
+void BusT4Cover::set_auto_close(bool enable) {
+  ESP_LOGI(TAG, "Setting auto-close (L1) to %s", enable ? "ON" : "OFF");
+  send_config_set(CFG_AUTOCLS, enable ? 0x01 : 0x00);
+}
+
+void BusT4Cover::set_photo_close(bool enable) {
+  ESP_LOGI(TAG, "Setting photo-close (L2) to %s", enable ? "ON" : "OFF");
+  send_config_set(CFG_PH_CLS, enable ? 0x01 : 0x00);
+}
+
+void BusT4Cover::set_always_close(bool enable) {
+  ESP_LOGI(TAG, "Setting always-close (L3) to %s", enable ? "ON" : "OFF");
+  send_config_set(CFG_ALW_CLS, enable ? 0x01 : 0x00);
+}
+
+void BusT4Cover::set_standby(bool enable) {
+  ESP_LOGI(TAG, "Setting standby mode to %s", enable ? "ON" : "OFF");
+  send_config_set(CFG_STANDBY, enable ? 0x01 : 0x00);
+}
+
+void BusT4Cover::set_peak_mode(bool enable) {
+  ESP_LOGI(TAG, "Setting peak mode to %s", enable ? "ON" : "OFF");
+  send_config_set(CFG_PEAK, enable ? 0x01 : 0x00);
+}
+
+void BusT4Cover::set_pre_flash(bool enable) {
+  ESP_LOGI(TAG, "Setting pre-flash warning to %s", enable ? "ON" : "OFF");
+  send_config_set(CFG_PRE_FLASH, enable ? 0x01 : 0x00);
 }
 
 } // namespace esphome::bus_t4

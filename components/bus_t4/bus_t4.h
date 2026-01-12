@@ -32,6 +32,9 @@ class BusT4Device {
   // Send a DMP info request (get status, position, etc)
   void send_info_request(T4Target target, T4InfoCommand command);
   
+  // Send a DMP config set (auto-close, etc)
+  void send_config_set(T4InfoCommand param, uint8_t value);
+  
   // Called by BusT4Component when a packet is received
   virtual void on_packet(const T4Packet &packet) {}
   
