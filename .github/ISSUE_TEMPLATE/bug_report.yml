@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for taking the time to report a bug!
-        
+
   - type: input
     id: hardware
     attributes:
@@ -16,7 +16,7 @@ body:
       placeholder: "Nice BiDi-WiFi / ESP32 + SN65HVD230 / etc."
     validations:
       required: true
-      
+
   - type: input
     id: controller
     attributes:
@@ -25,7 +25,7 @@ body:
       placeholder: "Robus 600 / RUN1200 / FILO400 / etc."
     validations:
       required: true
-      
+
   - type: input
     id: esphome
     attributes:
@@ -34,7 +34,7 @@ body:
       placeholder: "2024.12.0"
     validations:
       required: true
-      
+
   - type: textarea
     id: description
     attributes:
@@ -42,14 +42,14 @@ body:
       description: What happened? What did you expect?
     validations:
       required: true
-      
+
   - type: textarea
     id: config
     attributes:
       label: Configuration
       description: Your ESPHome YAML configuration (remove secrets)
       render: yaml
-      
+
   - type: textarea
     id: logs
     attributes:

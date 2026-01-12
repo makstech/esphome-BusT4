@@ -60,8 +60,71 @@ button:
       - lambda: id(gate).send_cmd(CMD_OPEN_PARTIAL_1);
 
   - platform: template
+    name: "Partial Open 2"
+    icon: "mdi:gate-arrow-right"
+    on_press:
+      - lambda: id(gate).send_cmd(CMD_OPEN_PARTIAL_2);
+
+  - platform: template
     name: "Step-by-Step"
     icon: "mdi:gate"
     on_press:
       - lambda: id(gate).send_cmd(CMD_STEP);
+
+# Motor controller configuration switches
+# These send SET commands to change the controller's settings
+switch:
+  - platform: template
+    name: "Auto-Close"
+    icon: "mdi:timer"
+    optimistic: true
+    turn_on_action:
+      - lambda: id(gate).set_auto_close(true);
+    turn_off_action:
+      - lambda: id(gate).set_auto_close(false);
+
+  - platform: template
+    name: "Photo-Close"
+    icon: "mdi:camera-timer"
+    optimistic: true
+    turn_on_action:
+      - lambda: id(gate).set_photo_close(true);
+    turn_off_action:
+      - lambda: id(gate).set_photo_close(false);
+
+  - platform: template
+    name: "Always Close"
+    icon: "mdi:lock"
+    optimistic: true
+    turn_on_action:
+      - lambda: id(gate).set_always_close(true);
+    turn_off_action:
+      - lambda: id(gate).set_always_close(false);
+
+  - platform: template
+    name: "Standby Mode"
+    icon: "mdi:power-standby"
+    optimistic: true
+    turn_on_action:
+      - lambda: id(gate).set_standby(true);
+    turn_off_action:
+      - lambda: id(gate).set_standby(false);
+
+  - platform: template
+    name: "Peak Mode"
+    icon: "mdi:speedometer"
+    optimistic: true
+    turn_on_action:
+      - lambda: id(gate).set_peak_mode(true);
+    turn_off_action:
+      - lambda: id(gate).set_peak_mode(false);
+
+  - platform: template
+    name: "Pre-Flash Warning"
+    icon: "mdi:alarm-light"
+    optimistic: true
+    turn_on_action:
+      - lambda: id(gate).set_pre_flash(true);
+    turn_off_action:
+      - lambda: id(gate).set_pre_flash(false);
 
