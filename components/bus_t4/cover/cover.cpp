@@ -92,7 +92,7 @@ void BusT4Cover::loop() {
     // Poll encoder position during movement (for devices that support it)
     // Robus devices don't support position queries during movement
     if (!is_robus_ && init_ok_) {
-      if (now - last_position_update_ >= POSITION_UPDATE_INTERVAL) {
+      if (now - last_position_update_ >= position_report_interval_) {
         last_position_update_ = now;
         request_position();
       }
@@ -651,12 +651,12 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
         }
         ESP_LOGI(TAG, "Product: %s", product_name_.c_str());
 
-        // Detect device-specific modes based on product name
-        if (product_name_.find(PRODUCT_WALKY) != std::string::npos) {
+        // Detect device-specific modes based on product name prefix
+        if (product_name_.find(PRODUCT_WALKY) == 0) {
           is_walky_ = true;
           ESP_LOGI(TAG, "Detected Walky device - using 1-byte position mode");
         }
-        if (product_name_.find(PRODUCT_ROBUS) != std::string::npos) {
+        if (product_name_.find(PRODUCT_ROBUS) == 0) {
           is_robus_ = true;
           ESP_LOGI(TAG, "Detected Robus device - position queries disabled during movement");
         }

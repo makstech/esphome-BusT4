@@ -30,10 +30,10 @@ struct LearnedDurations {
 };
 
 // Known product identifiers for device-specific handling
-// WLA1 = Walky (uses 1-byte position)
-static const std::string PRODUCT_WALKY = "WLA1";
-// ROBUSHSR10 = Robus HSR10 (no position query during movement)
-static const std::string PRODUCT_ROBUS = "ROBUSHSR10";
+// Products starting with WLA = Walky (uses 1-byte position)
+static const std::string PRODUCT_WALKY = "WLA";
+// Products starting with ROB = Robus family (no position query during movement)
+static const std::string PRODUCT_ROBUS = "ROB";
 
 class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
  public:
