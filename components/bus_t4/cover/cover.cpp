@@ -470,18 +470,53 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     
     case INF_IO: {
       // Input/Output state - includes limit switches
-      // I/O data may have additional offset
-      uint8_t io_state = packet.data[DATA_OFFSET + 3];
-      ESP_LOGD(TAG, "I/O state: 0x%02X", io_state);
+      // Log raw data for debugging
+      ESP_LOGD(TAG, "INF_IO raw: %02X %02X %02X %02X %02X",
+               packet.data[DATA_OFFSET], packet.data[DATA_OFFSET + 1],
+               packet.data[DATA_OFFSET + 2], packet.data[DATA_OFFSET + 3],
+               packet.data[DATA_OFFSET + 4]);
       
-      switch (io_state) {
-        case 0x01:  // Close limit switch
-          this->position = cover::COVER_CLOSED;
-          break;
-        case 0x02:  // Open limit switch
-          this->position = cover::COVER_OPEN;
-          break;
+      // I/O data structure varies by controller, check multiple bytes
+      uint8_t io_byte0 = packet.data[DATA_OFFSET];
+      uint8_t io_byte3 = packet.data[DATA_OFFSET + 3];
+      
+      // Check for limit switch states (try both common positions)
+      bool open_limit = false;
+      bool close_limit = false;
+      
+      // Some controllers use byte 0, others use byte 3
+      if (io_byte0 == 0x01 || io_byte3 == 0x01) {
+        close_limit = true;
       }
+      if (io_byte0 == 0x02 || io_byte3 == 0x02) {
+        open_limit = true;
+      }
+      
+      if (close_limit) {
+        ESP_LOGI(TAG, "Limit switch: CLOSED");
+        this->position = cover::COVER_CLOSED;
+        current_operation = cover::COVER_OPERATION_IDLE;
+        if (awaiting_confirmation_) {
+          ESP_LOGI(TAG, "Confirmed by limit switch: gate is fully closed");
+        }
+      } else if (open_limit) {
+        ESP_LOGI(TAG, "Limit switch: OPEN");
+        this->position = cover::COVER_OPEN;
+        current_operation = cover::COVER_OPERATION_IDLE;
+        if (awaiting_confirmation_) {
+          ESP_LOGI(TAG, "Confirmed by limit switch: gate is fully open");
+        }
+      } else {
+        ESP_LOGD(TAG, "No limit switch active (io_byte0=0x%02X, io_byte3=0x%02X)", io_byte0, io_byte3);
+        // If awaiting confirmation, request status as fallback
+        if (awaiting_confirmation_) {
+          ESP_LOGD(TAG, "No limit switch, requesting status as fallback");
+          send_info_request(FOR_CU, INF_STATUS);
+          break;  // Don't clear awaiting flag yet
+        }
+      }
+      
+      awaiting_confirmation_ = false;
       publish_state_if_changed();
       break;
     }
@@ -543,9 +578,10 @@ void BusT4Cover::request_status() {
 
 void BusT4Cover::request_status_confirmation() {
   if (parent_ == nullptr) return;
-  ESP_LOGD(TAG, "Requesting status confirmation after unexpected stop");
+  ESP_LOGD(TAG, "Requesting I/O state for limit switch confirmation");
   awaiting_confirmation_ = true;
-  send_info_request(FOR_CU, INF_STATUS);
+  // Request I/O state first - limit switches are most reliable
+  send_info_request(FOR_CU, INF_IO);
 }
 
 void BusT4Cover::update_position(uint16_t encoder_pos) {
