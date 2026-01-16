@@ -86,8 +86,11 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
 
   // Device initialization
   void init_device();
+  void init_oxi_device();  // Initialize OXI receiver (if present)
   bool init_ok_{false};
   uint8_t init_step_{0};  // Initialization state machine step
+  uint8_t discovery_attempts_{0};  // Discovery retry counter for exponential backoff
+  uint32_t get_discovery_interval() const;  // Get current discovery retry interval
 
   // Device identification - for device-specific handling
   std::string product_name_;           // Product name (e.g., "WLA1", "ROBUSHSR10")
@@ -95,6 +98,12 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   std::string firmware_version_;       // Firmware version string
   bool is_walky_{false};               // Walky gates: 1-byte position values
   bool is_robus_{false};               // Robus gates: no position query during movement
+
+  // OXI receiver tracking
+  T4Source oxi_address_{0x00, 0x00};   // OXI receiver address (if present)
+  bool has_oxi_{false};                // Whether OXI receiver was found
+  std::string oxi_product_;            // OXI product name
+  std::string oxi_firmware_;           // OXI firmware version
 
   // Position tracking
   uint16_t pos_max_{2048};    // Encoder position for fully open
