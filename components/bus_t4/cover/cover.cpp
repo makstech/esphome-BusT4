@@ -30,9 +30,12 @@ void BusT4Cover::setup() {
 void BusT4Cover::loop() {
   uint32_t now = millis();
 
-  // Initialization state machine - 250ms between steps
+  // Initialization state machine with exponential backoff
+  // Step 0 (discovery) uses longer intervals to avoid flooding the bus
+  // Other steps use shorter intervals since we're talking to a known device
   if (!init_ok_) {
-    if (now - last_init_attempt_ > 250) {
+    uint32_t retry_interval = (init_step_ == 0) ? get_discovery_interval() : 500;
+    if (now - last_init_attempt_ > retry_interval) {
       last_init_attempt_ = now;
       init_device();
     }
@@ -158,6 +161,17 @@ void BusT4Cover::dump_config() {
       ESP_LOGCONFIG(TAG, "  Position source: Encoder (primary)");
     } else {
       ESP_LOGCONFIG(TAG, "  Position source: Time-based estimation");
+    }
+
+    // OXI receiver info
+    if (has_oxi_) {
+      ESP_LOGCONFIG(TAG, "  OXI Address: 0x%02X.%02X", oxi_address_.address, oxi_address_.endpoint);
+      if (!oxi_product_.empty()) {
+        ESP_LOGCONFIG(TAG, "  OXI Product: %s", oxi_product_.c_str());
+      }
+      if (!oxi_firmware_.empty()) {
+        ESP_LOGCONFIG(TAG, "  OXI Firmware: %s", oxi_firmware_.c_str());
+      }
     }
   }
 }
@@ -471,12 +485,35 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       ESP_LOGI(TAG, "INF_WHO response: device_type=0x%02X from 0x%02X.%02X",
                responder_type, packet.header.from.address, packet.header.from.endpoint);
 
-      // Accept if it's a controller (0x04) or if from address has endpoint 0x03 (common for CU)
+      // Accept controller (0x04), endpoint 0x03, OR radio/OXI (0x0A)
+      // Some units (MC842) respond as OXI even if they're motor controllers
       if (responder_type == CONTROLLER || packet.header.from.endpoint == 0x03) {
+        // Primary motor controller found
         ESP_LOGI(TAG, "Found motor controller at 0x%02X.%02X",
                  packet.header.from.address, packet.header.from.endpoint);
         target_address_ = packet.header.from;
-        init_step_ = 1;  // Move to next init step, don't flood with requests
+        if (init_step_ == 0) {
+          init_step_ = 1;  // Move to next init step
+          discovery_attempts_ = 0;  // Reset backoff on success
+        }
+      } else if (responder_type == RADIO) {
+        // OXI receiver or mixed-mode device (like MC842)
+        ESP_LOGI(TAG, "Found OXI/RADIO device at 0x%02X.%02X",
+                 packet.header.from.address, packet.header.from.endpoint);
+        oxi_address_ = packet.header.from;
+        has_oxi_ = true;
+
+        // Queue OXI device info queries (async, won't block init)
+        init_oxi_device();
+
+        // If we haven't found a controller yet, use OXI address as target
+        // Some devices (MC842) only respond as OXI type
+        if (init_step_ == 0) {
+          ESP_LOGI(TAG, "Using OXI device as target (no controller found)");
+          target_address_ = packet.header.from;
+          init_step_ = 1;  // Proceed with initialization
+          discovery_attempts_ = 0;  // Reset backoff on success
+        }
       }
       break;
     }
@@ -576,7 +613,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     case INF_IO: {
       // Input/Output state - includes limit switches
       // Limit switch state is at data[16] = DATA_OFFSET + 4
-      // This is consistent across most Nice controllers (pruwait's findings)
+      // This is consistent across most Nice controllers
       const uint8_t IO_LIMIT_OFFSET = DATA_OFFSET + 4;  // = 16
 
       // Log raw data for debugging
@@ -643,22 +680,33 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       // Product name response (null-terminated string)
       size_t str_len = packet.size - DATA_OFFSET - 1;  // -1 for checksum
       if (str_len > 0 && str_len < 64) {
-        product_name_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
-        // Remove null terminators and trailing garbage
-        size_t null_pos = product_name_.find('\0');
-        if (null_pos != std::string::npos) {
-          product_name_.resize(null_pos);
-        }
-        ESP_LOGI(TAG, "Product: %s", product_name_.c_str());
+        // Check if this is from OXI device
+        if (has_oxi_ && packet.header.from == oxi_address_) {
+          oxi_product_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
+          size_t null_pos = oxi_product_.find('\0');
+          if (null_pos != std::string::npos) {
+            oxi_product_.resize(null_pos);
+          }
+          ESP_LOGI(TAG, "OXI Product: %s", oxi_product_.c_str());
+        } else {
+          // Product response from motor controller
+          product_name_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
+          // Remove null terminators and trailing garbage
+          size_t null_pos = product_name_.find('\0');
+          if (null_pos != std::string::npos) {
+            product_name_.resize(null_pos);
+          }
+          ESP_LOGI(TAG, "Product: %s", product_name_.c_str());
 
-        // Detect device-specific modes based on product name prefix
-        if (product_name_.find(PRODUCT_WALKY) == 0) {
-          is_walky_ = true;
-          ESP_LOGI(TAG, "Detected Walky device - using 1-byte position mode");
-        }
-        if (product_name_.find(PRODUCT_ROBUS) == 0) {
-          is_robus_ = true;
-          ESP_LOGI(TAG, "Detected Robus device - position queries disabled during movement");
+          // Detect device-specific modes based on product name prefix
+          if (product_name_.find(PRODUCT_WALKY) == 0) {
+            is_walky_ = true;
+            ESP_LOGI(TAG, "Detected Walky device - using 1-byte position mode");
+          }
+          if (product_name_.find(PRODUCT_ROBUS) == 0) {
+            is_robus_ = true;
+            ESP_LOGI(TAG, "Detected Robus device - position queries disabled during movement");
+          }
         }
       }
       break;
@@ -668,13 +716,24 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       // Firmware version response (null-terminated string)
       size_t str_len = packet.size - DATA_OFFSET - 1;  // -1 for checksum
       if (str_len > 0 && str_len < 64) {
-        firmware_version_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
-        // Remove null terminators and trailing garbage
-        size_t null_pos = firmware_version_.find('\0');
-        if (null_pos != std::string::npos) {
-          firmware_version_.resize(null_pos);
+        // Check if this is from OXI device
+        if (has_oxi_ && packet.header.from == oxi_address_) {
+          oxi_firmware_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
+          size_t null_pos = oxi_firmware_.find('\0');
+          if (null_pos != std::string::npos) {
+            oxi_firmware_.resize(null_pos);
+          }
+          ESP_LOGI(TAG, "OXI Firmware: %s", oxi_firmware_.c_str());
+        } else {
+          // Firmware response from motor controller
+          firmware_version_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
+          // Remove null terminators and trailing garbage
+          size_t null_pos = firmware_version_.find('\0');
+          if (null_pos != std::string::npos) {
+            firmware_version_.resize(null_pos);
+          }
+          ESP_LOGI(TAG, "Firmware: %s", firmware_version_.c_str());
         }
-        ESP_LOGI(TAG, "Firmware: %s", firmware_version_.c_str());
       }
       break;
     }
@@ -683,7 +742,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
 
 void BusT4Cover::parse_oxi_packet(const T4Packet &packet) {
   // OXI receiver packets contain remote control information
-  // Format (from pruwait):
+  // OXI packet format:
   //   data[9] = FOR_OXI (0x0A)
   //   data[10] = command (0x25 = remote list, 0x26 = button read)
   //   data[11] = subcommand
@@ -737,7 +796,8 @@ void BusT4Cover::init_device() {
   switch (init_step_) {
     case 0: {
       // Step 0: Discover devices on the bus
-      ESP_LOGI(TAG, "Initializing device - discovering...");
+      discovery_attempts_++;
+      ESP_LOGI(TAG, "Initializing device - discovering... (attempt %d)", discovery_attempts_);
       T4Source broadcast{0xFF, 0xFF};
       uint8_t who_msg[5] = { FOR_ALL, INF_WHO, REQ_GET, 0x00, 0x00 };
       T4Packet who_packet(broadcast, parent_->get_address(), DMP, who_msg, sizeof(who_msg));
@@ -807,6 +867,27 @@ void BusT4Cover::init_device() {
       // Already initialized
       break;
   }
+}
+
+void BusT4Cover::init_oxi_device() {
+  if (!has_oxi_) return;
+
+  ESP_LOGI(TAG, "Querying OXI device at 0x%02X.%02X",
+           oxi_address_.address, oxi_address_.endpoint);
+
+  // Query OXI device info
+  // Build packets targeting the OXI address
+  uint8_t prd_msg[5] = { FOR_ALL, INF_PRD, REQ_GET, 0x00, 0x00 };
+  T4Packet prd_packet(oxi_address_, parent_->get_address(), DMP, prd_msg, sizeof(prd_msg));
+  write(&prd_packet, 0);
+
+  uint8_t hwr_msg[5] = { FOR_ALL, INF_HWR, REQ_GET, 0x00, 0x00 };
+  T4Packet hwr_packet(oxi_address_, parent_->get_address(), DMP, hwr_msg, sizeof(hwr_msg));
+  write(&hwr_packet, 0);
+
+  uint8_t frm_msg[5] = { FOR_ALL, INF_FRM, REQ_GET, 0x00, 0x00 };
+  T4Packet frm_packet(oxi_address_, parent_->get_address(), DMP, frm_msg, sizeof(frm_msg));
+  write(&frm_packet, 0);
 }
 
 void BusT4Cover::request_position() {
@@ -1038,6 +1119,14 @@ void BusT4Cover::set_peak_mode(bool enable) {
 void BusT4Cover::set_pre_flash(bool enable) {
   ESP_LOGI(TAG, "Setting pre-flash warning to %s", enable ? "ON" : "OFF");
   send_config_set(CFG_PRE_FLASH, enable ? 0x01 : 0x00);
+}
+
+uint32_t BusT4Cover::get_discovery_interval() const {
+  // Exponential backoff: 1s, 2s, 4s, 8s, then cap at 10s
+  // This avoids flooding the bus while still retrying periodically
+  static const uint32_t intervals[] = {1000, 2000, 4000, 8000, 10000};
+  uint8_t idx = std::min(discovery_attempts_, (uint8_t)4);
+  return intervals[idx];
 }
 
 } // namespace esphome::bus_t4

@@ -85,6 +85,23 @@ void BusT4Component::rxTask() {
         case TRAILING_SIZE:
           // Verify trailing size matches
           if (byte == expected_size) {
+            // Early echo detection: check if FROM address matches our address
+            // This catches corrupted echoes before checksum validation
+            // Walky devices echo with F0 corruption pattern in some bytes (0x00 → 0xF0)
+            T4Source packet_from{packet.data[2], packet.data[3]};
+
+            // Check if this looks like an echo (FROM == our address, possibly with corruption)
+            bool is_likely_echo = (packet_from == address_) ||
+                // Check for common echo corruption pattern (0x00 → 0xF0)
+                ((packet.data[2] == address_.address || packet.data[2] == (address_.address | 0xF0)) &&
+                 (packet.data[3] == address_.endpoint || packet.data[3] == (address_.endpoint | 0xF0)));
+
+            if (is_likely_echo) {
+              ESP_LOGV(TAG, "Ignoring likely TX echo (pre-checksum filter)");
+              rx_state = WAIT_SYNC;
+              break;
+            }
+
             // Verify internal header checksum before accepting
             uint8_t header_check = packet.checksum(0, 6);  // First 6 bytes XOR'd
             if (header_check == packet.data[6]) {
