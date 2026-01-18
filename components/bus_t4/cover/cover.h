@@ -63,6 +63,10 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   void set_peak_mode(bool enable);       // Peak mode (faster operation)
   void set_pre_flash(bool enable);       // Pre-flash warning light
 
+  // Raw command for debugging/testing
+  // Accepts hex string like "55.0C.00.FF..." or "550C00FF..."
+  void send_raw_cmd(const std::string &data);
+
  protected:
   void control(const cover::CoverCall &call) override;
 
