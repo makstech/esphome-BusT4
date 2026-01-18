@@ -88,8 +88,9 @@ void BusT4Component::rxTask() {
             // Verify header checksum (CRC1): XOR of bytes 0-5 should equal byte 6
             uint8_t header_check = packet.checksum(0, 6);
             if (header_check != packet.data[6]) {
-              ESP_LOGW(TAG, "Header checksum mismatch: expected 0x%02X, got 0x%02X",
-                       header_check, packet.data[6]);
+              ESP_LOGW(TAG, "Header checksum mismatch: expected 0x%02X, got 0x%02X: %s",
+                       header_check, packet.data[6],
+                       format_hex_pretty(packet.data, packet.size).c_str());
               rx_state = WAIT_SYNC;
               break;
             }
@@ -101,8 +102,9 @@ void BusT4Component::rxTask() {
                 payload_check ^= packet.data[i];
               }
               if (payload_check != packet.data[packet.size - 1]) {
-                ESP_LOGW(TAG, "Payload checksum mismatch: expected 0x%02X, got 0x%02X",
-                         payload_check, packet.data[packet.size - 1]);
+                ESP_LOGW(TAG, "Payload checksum mismatch: expected 0x%02X, got 0x%02X: %s",
+                         payload_check, packet.data[packet.size - 1],
+                         format_hex_pretty(packet.data, packet.size).c_str());
                 rx_state = WAIT_SYNC;
                 break;
               }
