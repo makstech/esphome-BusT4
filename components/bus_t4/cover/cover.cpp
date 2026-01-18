@@ -3,6 +3,8 @@
 #include "esphome/core/helpers.h"
 #include <cmath>
 #include <string>
+#include <algorithm>
+#include <cctype>
 
 namespace esphome::bus_t4 {
 
@@ -497,23 +499,16 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
           discovery_attempts_ = 0;  // Reset backoff on success
         }
       } else if (responder_type == RADIO) {
-        // OXI receiver or mixed-mode device (like MC842)
-        ESP_LOGI(TAG, "Found OXI/RADIO device at 0x%02X.%02X",
+        // OXI receiver - track for info but don't use as motor controller target
+        // This matches original behavior: OXI is only for receiving remote control info
+        ESP_LOGI(TAG, "Found OXI/RADIO device at 0x%02X.%02X (not using as target)",
                  packet.header.from.address, packet.header.from.endpoint);
         oxi_address_ = packet.header.from;
         has_oxi_ = true;
 
         // Queue OXI device info queries (async, won't block init)
         init_oxi_device();
-
-        // If we haven't found a controller yet, use OXI address as target
-        // Some devices (MC842) only respond as OXI type
-        if (init_step_ == 0) {
-          ESP_LOGI(TAG, "Using OXI device as target (no controller found)");
-          target_address_ = packet.header.from;
-          init_step_ = 1;  // Proceed with initialization
-          discovery_attempts_ = 0;  // Reset backoff on success
-        }
+        // Don't advance init_step_ - keep waiting for CONTROLLER (0x04)
       }
       break;
     }
@@ -1119,6 +1114,29 @@ void BusT4Cover::set_peak_mode(bool enable) {
 void BusT4Cover::set_pre_flash(bool enable) {
   ESP_LOGI(TAG, "Setting pre-flash warning to %s", enable ? "ON" : "OFF");
   send_config_set(CFG_PRE_FLASH, enable ? 0x01 : 0x00);
+}
+
+void BusT4Cover::send_raw_cmd(const std::string &data) {
+  // Parse hex string - remove all non-hex characters and convert pairs to bytes
+  // Accepts formats like "55.0C.00.FF..." or "550C00FF..."
+  std::string hex_data = data;
+  hex_data.erase(std::remove_if(hex_data.begin(), hex_data.end(),
+      [](unsigned char c) { return !std::isxdigit(c); }), hex_data.end());
+
+  if (hex_data.empty() || hex_data.size() % 2 != 0) {
+    ESP_LOGW(TAG, "Invalid raw command: %s", data.c_str());
+    return;
+  }
+
+  std::vector<uint8_t> bytes;
+  for (size_t i = 0; i + 1 < hex_data.size(); i += 2) {
+    bytes.push_back(static_cast<uint8_t>(std::strtol(hex_data.substr(i, 2).c_str(), nullptr, 16)));
+  }
+
+  if (bytes.empty()) return;
+
+  ESP_LOGI(TAG, "Sending raw command: %s", format_hex_pretty(bytes).c_str());
+  parent_->write_raw(bytes.data(), bytes.size());
 }
 
 uint32_t BusT4Cover::get_discovery_interval() const {

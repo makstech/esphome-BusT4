@@ -255,6 +255,31 @@ switch:
       - lambda: id(gate).set_pre_flash(false);
 ```
 
+### Raw Command for Debugging
+
+For debugging and testing, you can send raw hex commands directly to the bus using `send_raw_cmd()`. This accepts hex strings in formats like `"55.0C.00.FF..."` or `"550C00FF..."` (dots/spaces are automatically stripped).
+
+The easiest way to use this is with an ESPHome Text component:
+
+```yaml
+text:
+  - platform: template
+    name: "Raw Command"
+    id: raw_command
+    optimistic: true
+    mode: text
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty()) {
+              id(gate).send_raw_cmd(x);
+            }
+```
+
+This creates a text input in Home Assistant where you can paste hex commands. The command is sent immediately when you submit the text.
+
+> **Note**: The text component approach is recommended because ESPHome's API service string variables have [known issues](https://github.com/esphome/issues/issues/3564) with the ESP-IDF framework.
+
 ## How Position Tracking Works
 
 This component uses **multiple strategies** for accurate position tracking:

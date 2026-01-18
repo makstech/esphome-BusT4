@@ -128,3 +128,18 @@ switch:
     turn_off_action:
       - lambda: id(gate).set_pre_flash(false);
 
+# Raw hex command input for debugging/testing
+# Enter hex string like "55.0C.00.FF..." or "550C00FF..." in Home Assistant
+text:
+  - platform: template
+    name: "Raw Command"
+    id: raw_command
+    optimistic: true
+    mode: text
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty()) {
+              id(gate).send_raw_cmd(x);
+            }
+

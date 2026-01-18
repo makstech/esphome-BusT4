@@ -25,6 +25,9 @@ class BusT4Component final : public Component, public uart::UARTDevice {
 
   bool write(T4Packet *packet, TickType_t xTicksToWait) { return xQueueSend(txQueue_, packet, xTicksToWait); }
 
+  // Send raw bytes directly to UART (for debugging/testing)
+  void write_raw(const uint8_t *data, size_t len);
+
   void set_address(const uint16_t address) {
     address_.address = static_cast<uint8_t>(address >> 8);
     address_.endpoint = static_cast<uint8_t>(address & 0xFF);

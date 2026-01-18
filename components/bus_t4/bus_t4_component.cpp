@@ -158,4 +158,12 @@ void BusT4Component::txTask() {
   vTaskDelete(nullptr);
 }
 
+void BusT4Component::write_raw(const uint8_t *data, size_t len) {
+  // Send raw bytes directly to UART with break prefix
+  // Used for debugging/testing with user-provided hex commands
+  parent_->write_byte(T4_BREAK);
+  parent_->write_array(data, len);
+  parent_->flush();
+}
+
 } // namespace esphome::bus_t4
