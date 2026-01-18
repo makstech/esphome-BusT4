@@ -85,33 +85,33 @@ void BusT4Component::rxTask() {
         case TRAILING_SIZE:
           // Verify trailing size matches
           if (byte == expected_size) {
-            // Early echo detection: check if FROM address matches our address
-            // This catches corrupted echoes before checksum validation
-            // Walky devices echo with F0 corruption pattern in some bytes (0x00 → 0xF0)
-            T4Source packet_from{packet.data[2], packet.data[3]};
-
-            // Check if this looks like an echo (FROM == our address, possibly with corruption)
-            bool is_likely_echo = (packet_from == address_) ||
-                // Check for common echo corruption pattern (0x00 → 0xF0)
-                ((packet.data[2] == address_.address || packet.data[2] == (address_.address | 0xF0)) &&
-                 (packet.data[3] == address_.endpoint || packet.data[3] == (address_.endpoint | 0xF0)));
-
-            if (is_likely_echo) {
-              ESP_LOGV(TAG, "Ignoring likely TX echo (pre-checksum filter)");
+            // Verify header checksum (CRC1): XOR of bytes 0-5 should equal byte 6
+            uint8_t header_check = packet.checksum(0, 6);
+            if (header_check != packet.data[6]) {
+              ESP_LOGW(TAG, "Header checksum mismatch: expected 0x%02X, got 0x%02X",
+                       header_check, packet.data[6]);
               rx_state = WAIT_SYNC;
               break;
             }
 
-            // Verify internal header checksum before accepting
-            uint8_t header_check = packet.checksum(0, 6);  // First 6 bytes XOR'd
-            if (header_check == packet.data[6]) {
-              ESP_LOGD(TAG, "Received packet: %s (%d bytes)",
-                       format_hex_pretty(packet.data, packet.size).c_str(), packet.size);
-              xQueueSend(rxQueue_, &packet, portMAX_DELAY);
-            } else {
-              ESP_LOGW(TAG, "Header checksum mismatch: expected 0x%02X, got 0x%02X",
-                       header_check, packet.data[6]);
+            // Verify payload checksum (CRC2): XOR of bytes 7 to size-2 should equal byte size-1
+            if (packet.size >= 9) {  // Minimum: 7 header + 1 payload + 1 CRC2
+              uint8_t payload_check = packet.data[7];
+              for (size_t i = 8; i < packet.size - 1; i++) {
+                payload_check ^= packet.data[i];
+              }
+              if (payload_check != packet.data[packet.size - 1]) {
+                ESP_LOGW(TAG, "Payload checksum mismatch: expected 0x%02X, got 0x%02X",
+                         payload_check, packet.data[packet.size - 1]);
+                rx_state = WAIT_SYNC;
+                break;
+              }
             }
+
+            // Both checksums valid - accept packet
+            ESP_LOGD(TAG, "Received packet: %s (%d bytes)",
+                     format_hex_pretty(packet.data, packet.size).c_str(), packet.size);
+            xQueueSend(rxQueue_, &packet, portMAX_DELAY);
           } else {
             ESP_LOGW(TAG, "Trailing size mismatch: expected 0x%02X, got 0x%02X", expected_size, byte);
           }
