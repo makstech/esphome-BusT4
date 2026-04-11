@@ -21,9 +21,17 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   void loop() override;
   void dump_config() override;
 
-  bool read(T4Packet *packet, TickType_t xTicksToWait) { return xQueueReceive(rxQueue_, packet, xTicksToWait); }
+  bool read(T4Packet *packet, TickType_t xTicksToWait) {
+    if (rxQueue_ == nullptr)
+      return false;
+    return xQueueReceive(rxQueue_, packet, xTicksToWait);
+  }
 
-  bool write(T4Packet *packet, TickType_t xTicksToWait) { return xQueueSend(txQueue_, packet, xTicksToWait); }
+  bool write(T4Packet *packet, TickType_t xTicksToWait) {
+    if (txQueue_ == nullptr)
+      return false;
+    return xQueueSend(txQueue_, packet, xTicksToWait);
+  }
 
   // Send raw bytes directly to UART (for debugging/testing)
   void write_raw(const uint8_t *data, size_t len);
