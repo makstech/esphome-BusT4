@@ -157,6 +157,9 @@ void BusT4Cover::dump_config() {
     if (is_robus_) {
       ESP_LOGCONFIG(TAG, "  Mode: Robus (no position query during movement)");
     }
+    if (is_mc824h_) {
+      ESP_LOGCONFIG(TAG, "  Mode: MC824H");
+    }
 
     // Position tracking mode
     if (has_encoder_) {
@@ -564,7 +567,11 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
         pos = packet.data[DATA_OFFSET];
         ESP_LOGD(TAG, "Current position (Walky 1-byte): %d", pos);
       } else {
-        pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+        if (is_mc824h_) {
+          pos = (packet.data[DATA_OFFSET + 1] << 8) | packet.data[DATA_OFFSET + 2];
+        } else {
+          pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+        }
         ESP_LOGD(TAG, "Current position: %d", pos);
       }
       update_position(pos);
@@ -573,7 +580,12 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
 
     case INF_POS_MAX: {
       // Open position (2 bytes, big endian)
-      uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+      uint16_t pos;
+      if (is_mc824h_) {
+        pos = (packet.data[DATA_OFFSET + 1] << 8) | packet.data[DATA_OFFSET + 2];
+      } else {
+        pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+      }
       if (pos > 0) {
         pos_max_ = pos;
         ESP_LOGI(TAG, "Open position: %d", pos_max_);
@@ -581,9 +593,15 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       break;
     }
 
+    case INF_MIN_CLS:
     case INF_POS_MIN: {
       // Close position (2 bytes, big endian)
-      uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+      uint16_t pos;
+      if (is_mc824h_) {
+        pos = (packet.data[DATA_OFFSET + 1] << 8) | packet.data[DATA_OFFSET + 2];
+      } else {
+        pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+      }
       pos_min_ = pos;
       ESP_LOGI(TAG, "Close position: %d", pos_min_);
       break;
@@ -595,6 +613,8 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       uint16_t pos;
       if (is_walky_) {
         pos = packet.data[DATA_OFFSET];
+      } else if (is_mc824h_) {
+        pos = (packet.data[DATA_OFFSET + 1] << 8) | packet.data[DATA_OFFSET + 2];
       } else {
         pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
       }
@@ -697,10 +717,12 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
           if (product_name_.find(PRODUCT_WALKY) == 0) {
             is_walky_ = true;
             ESP_LOGI(TAG, "Detected Walky device - using 1-byte position mode");
-          }
-          if (product_name_.find(PRODUCT_ROBUS) == 0) {
+          } else if (product_name_.find(PRODUCT_ROBUS) == 0) {
             is_robus_ = true;
             ESP_LOGI(TAG, "Detected Robus device - position queries disabled during movement");
+          } else if (product_name_.find(PRODUCT_MC824H) == 0) {
+            is_mc824h_ = true;
+            ESP_LOGI(TAG, "Detected MC824H device");
           }
         }
       }
@@ -832,7 +854,12 @@ void BusT4Cover::init_device() {
       // Step 5: Request open/close positions
       ESP_LOGD(TAG, "Init step 5: requesting position limits");
       send_info_request(FOR_CU, INF_POS_MAX);
-      send_info_request(FOR_CU, INF_POS_MIN);
+      if (is_mc824h_) {
+        // MC824H doesn't support INF_POS_MIN param, instead uses INF_MIN_CLS param for fully closed gate
+        send_info_request(FOR_CU, INF_MIN_CLS);
+      } else {
+        send_info_request(FOR_CU, INF_POS_MIN);
+      }
       init_step_ = 6;
       break;
 

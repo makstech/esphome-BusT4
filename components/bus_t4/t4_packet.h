@@ -73,6 +73,7 @@ enum T4InfoCommand : uint8_t {
   INF_DSC = 0x0C,        // Description
   INF_CUR_POS = 0x11,    // Current position
   INF_MAX_OPN = 0x12,    // Max encoder position
+  INF_MIN_CLS = 0x13,    // Min encoder position
   INF_POS_MAX = 0x18,    // Open position
   INF_POS_MIN = 0x19,    // Close position
   INF_IO = 0xD1,         // Input/output state (limit switches)
