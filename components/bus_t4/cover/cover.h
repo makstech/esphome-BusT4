@@ -34,6 +34,9 @@ struct LearnedDurations {
 static const std::string PRODUCT_WALKY = "WLA";
 // Products starting with ROB = Robus family (no position query during movement)
 static const std::string PRODUCT_ROBUS = "ROB";
+// MC824H and MC824HR, which are motor control units for multiple 24V dual swing gate systems
+// All encoder values (2-byte) are prefixed with 1-byte motor/encoder index, which can take value of 0 or 1
+static const std::string PRODUCT_MC824H = "MC824H";
 
 class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
  public:
@@ -102,6 +105,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   std::string firmware_version_;       // Firmware version string
   bool is_walky_{false};               // Walky gates: 1-byte position values
   bool is_robus_{false};               // Robus gates: no position query during movement
+  bool is_mc824h_{false};              // MC824H: two encoders, 2-byte position values prefixed by 1-byte motor/encoder index
 
   // OXI receiver tracking
   T4Source oxi_address_{0x00, 0x00};   // OXI receiver address (if present)
