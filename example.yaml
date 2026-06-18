@@ -77,61 +77,46 @@ button:
       - lambda: id(gate).send_cmd(CMD_STEP);
 
 # Motor controller configuration switches
-# These send SET commands to change the controller's settings
+# Toggling a switch sends a SET command; the switch also listens to all bus
+# traffic and reacts to GET/SET replies, so changes made via Oview or another
+# client are reflected immediately. Each function is an independent on/off flag.
+# Supported types: auto_close, photo_close, always_close, standby, peak,
+# pre_flash, slave.
 switch:
-  - platform: template
+  - platform: bus_t4
+    type: auto_close
     name: "Auto-Close"
     icon: "mdi:timer"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_auto_close(true);
-    turn_off_action:
-      - lambda: id(gate).set_auto_close(false);
 
-  - platform: template
+  - platform: bus_t4
+    type: photo_close
     name: "Photo-Close"
     icon: "mdi:camera-timer"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_photo_close(true);
-    turn_off_action:
-      - lambda: id(gate).set_photo_close(false);
 
-  - platform: template
+  - platform: bus_t4
+    type: always_close
     name: "Always Close"
     icon: "mdi:lock"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_always_close(true);
-    turn_off_action:
-      - lambda: id(gate).set_always_close(false);
 
-  - platform: template
+  - platform: bus_t4
+    type: standby
     name: "Standby Mode"
     icon: "mdi:power-standby"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_standby(true);
-    turn_off_action:
-      - lambda: id(gate).set_standby(false);
 
-  - platform: template
+  - platform: bus_t4
+    type: peak
     name: "Peak Mode"
     icon: "mdi:speedometer"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_peak_mode(true);
-    turn_off_action:
-      - lambda: id(gate).set_peak_mode(false);
 
-  - platform: template
+  - platform: bus_t4
+    type: pre_flash
     name: "Pre-Flash Warning"
     icon: "mdi:alarm-light"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_pre_flash(true);
-    turn_off_action:
-      - lambda: id(gate).set_pre_flash(false);
+
+  - platform: bus_t4
+    type: slave
+    name: "Slave Mode"
+    icon: "mdi:link-variant"
 
 # Security lock using IT4WIFI device identity
 lock:

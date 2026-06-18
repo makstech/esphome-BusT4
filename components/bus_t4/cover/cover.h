@@ -54,15 +54,6 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   void set_auto_learn_timing(bool enable) { auto_learn_timing_ = enable; }
   void set_position_report_interval(uint32_t interval) { position_report_interval_ = interval; }
 
-  // Motor controller configuration (runtime)
-  // These send commands to the motor controller to change its settings
-  void set_auto_close(bool enable);      // L1 - Auto-close after opening
-  void set_photo_close(bool enable);     // L2 - Close after photo sensor clears
-  void set_always_close(bool enable);    // L3 - Always close (ignore hold-open)
-  void set_standby(bool enable);         // Standby mode (power saving)
-  void set_peak_mode(bool enable);       // Peak mode (faster operation)
-  void set_pre_flash(bool enable);       // Pre-flash warning light
-
   // Raw command for debugging/testing
   // Accepts hex string like "55.0C.00.FF..." or "550C00FF..."
   void send_raw_cmd(const std::string &data);

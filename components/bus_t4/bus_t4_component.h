@@ -23,6 +23,7 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   void setup() override;
   void loop() override;
   void dump_config() override;
+  float get_setup_priority() const override { return setup_priority::HARDWARE; }
 
   bool read(T4Packet *packet, TickType_t xTicksToWait) {
     if (rxQueue_ == nullptr)
@@ -35,6 +36,12 @@ class BusT4Component final : public Component, public uart::UARTDevice {
       return false;
     return xQueueSend(txQueue_, packet, xTicksToWait);
   }
+
+  // Synchronous request/response: sends a packet and blocks until a matching
+  // DMP response arrives (same command byte) or the timeout expires.
+  // Non-matching packets are dispatched to all registered devices normally.
+  // Returns true if a matching response was received.
+  bool request(T4Packet *req, T4Packet *rsp, uint32_t timeout_ms);
 
   // Send raw bytes directly to UART (for debugging/testing)
   void write_raw(const uint8_t *data, size_t len);
@@ -54,6 +61,9 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   void txTask();
   static void rxTaskThunk(void *self) { static_cast<BusT4Component *>(self)->rxTask(); }
   static void txTaskThunk(void *self) { static_cast<BusT4Component *>(self)->txTask(); }
+
+  // Dispatch a received packet to all registered devices (skips TX echo).
+  void dispatch_packet_(const T4Packet &packet);
 
   // Send a BusT4 break signal (~1ms low pulse) before each packet.
   // Temporarily lowers UART baud rate to produce the correct break duration.

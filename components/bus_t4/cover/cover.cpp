@@ -1083,39 +1083,6 @@ void BusT4Cover::load_learned_durations() {
   }
 }
 
-// Motor controller configuration commands (SET)
-// These change the motor controller's settings via the Nice Bus T4 protocol
-
-void BusT4Cover::set_auto_close(bool enable) {
-  ESP_LOGI(TAG, "Setting auto-close (L1) to %s", enable ? "ON" : "OFF");
-  send_config_set(CFG_AUTOCLS, enable ? 0x01 : 0x00);
-}
-
-void BusT4Cover::set_photo_close(bool enable) {
-  ESP_LOGI(TAG, "Setting photo-close (L2) to %s", enable ? "ON" : "OFF");
-  send_config_set(CFG_PH_CLS, enable ? 0x01 : 0x00);
-}
-
-void BusT4Cover::set_always_close(bool enable) {
-  ESP_LOGI(TAG, "Setting always-close (L3) to %s", enable ? "ON" : "OFF");
-  send_config_set(CFG_ALW_CLS, enable ? 0x01 : 0x00);
-}
-
-void BusT4Cover::set_standby(bool enable) {
-  ESP_LOGI(TAG, "Setting standby mode to %s", enable ? "ON" : "OFF");
-  send_config_set(CFG_STANDBY, enable ? 0x01 : 0x00);
-}
-
-void BusT4Cover::set_peak_mode(bool enable) {
-  ESP_LOGI(TAG, "Setting peak mode to %s", enable ? "ON" : "OFF");
-  send_config_set(CFG_PEAK, enable ? 0x01 : 0x00);
-}
-
-void BusT4Cover::set_pre_flash(bool enable) {
-  ESP_LOGI(TAG, "Setting pre-flash warning to %s", enable ? "ON" : "OFF");
-  send_config_set(CFG_PRE_FLASH, enable ? 0x01 : 0x00);
-}
-
 void BusT4Cover::send_raw_cmd(const std::string &data) {
   // Parse hex string - remove all non-hex characters and convert pairs to bytes
   // Accepts formats like "55.0C.00.FF..." or "550C00FF..."

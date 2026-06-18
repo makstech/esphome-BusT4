@@ -54,23 +54,18 @@ void BusT4Component::setup() {
 }
 
 void BusT4Component::loop() {
-  // Process received packets and dispatch to registered devices
   T4Packet packet;
-  while (xQueueReceive(rxQueue_, &packet, 0)) {
-    // Ignore packets FROM ourselves (TX echo on half-duplex bus)
-    if (packet.header.from == address_) {
-      ESP_LOGV(TAG, "Ignoring TX echo");
-      continue;
-    }
+  while (xQueueReceive(rxQueue_, &packet, 0))
+    this->dispatch_packet_(packet);
+}
 
-    // Ignore packets addressed TO ourselves that we sent (broadcast responses come TO us)
-    // But accept packets where TO matches our address (responses to our requests)
-
-    // Dispatch to all registered devices
-    for (auto *device : devices_) {
-      device->on_packet(packet);
-    }
+void BusT4Component::dispatch_packet_(const T4Packet &packet) {
+  if (packet.header.from == address_) {
+    ESP_LOGV(TAG, "Ignoring TX echo");
+    return;
   }
+  for (auto *device : devices_)
+    device->on_packet(packet);
 }
 
 void BusT4Component::dump_config() {
@@ -192,6 +187,35 @@ void BusT4Component::txTask() {
 
   txTask_ = nullptr;
   vTaskDelete(nullptr);
+}
+
+bool BusT4Component::request(T4Packet *req, T4Packet *rsp, uint32_t timeout_ms) {
+  if (!this->write(req, pdMS_TO_TICKS(timeout_ms)))
+    return false;
+
+  uint8_t expected_cmd = req->message.command;
+  TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
+
+  while (xTaskGetTickCount() < deadline) {
+    T4Packet pkt;
+    if (!xQueueReceive(rxQueue_, &pkt, pdMS_TO_TICKS(10)))
+      continue;
+
+    // Skip TX echo
+    if (pkt.header.from == address_)
+      continue;
+
+    // Match: DMP response with the same command byte
+    if (pkt.header.protocol == DMP && pkt.message.command == expected_cmd) {
+      *rsp = pkt;
+      return true;
+    }
+
+    // Not ours — dispatch normally
+    this->dispatch_packet_(pkt);
+  }
+
+  return false;
 }
 
 void BusT4Component::write_raw(const uint8_t *data, size_t len) {

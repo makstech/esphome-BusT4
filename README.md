@@ -197,6 +197,41 @@ button:
 | `close_duration` | time | `20s` | Initial/fallback time to fully close |
 | `position_report_interval` | time | `1s` | How often to update position during movement |
 
+#### Switch Platform
+
+Exposes a control-unit configuration flag as a switch. Toggling it sends a SET
+command; the switch also listens to all bus traffic and reacts to GET/SET replies,
+so changes made elsewhere (Oview, another client) are reflected immediately.
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `type` | enum | *Required* | Which flag to expose (see below) |
+| `bus_t4_id` | id | *auto* | The `bus_t4` component to use |
+
+Supported `type` values (each is an independent on/off function):
+
+<!-- BEGIN SWITCH_TYPES -->
+| `type` | Description |
+|--------|-------------|
+| `auto_close` | Auto-close after opening |
+| `photo_close` | Close after photo |
+| `always_close` | Always close |
+| `standby` | Standby |
+| `peak` | Peak |
+| `pre_flash` | Pre-flashing |
+| `slave` | Slave mode |
+<!-- END SWITCH_TYPES -->
+
+```yaml
+switch:
+  - platform: bus_t4
+    type: photo_close
+    name: "Close after photo"
+  - platform: bus_t4
+    type: auto_close
+    name: "Auto-close"
+```
+
 ### Available Commands
 
 Use in lambdas with `id(gate).send_cmd(COMMAND)`:
@@ -237,60 +272,12 @@ lock:
       - lambda: 'id(gate).send_cmd(CMD_RELEASE, IT4WIFI);'
 ```
 
-### Motor Controller Configuration
-
-You can change motor controller settings via lambdas. These send SET commands to the controller:
-
-| Method | Description |
-|--------|-------------|
-| `set_auto_close(bool)` | L1 - Enable/disable auto-close after opening |
-| `set_photo_close(bool)` | L2 - Close after photo sensor clears |
-| `set_always_close(bool)` | L3 - Always close (ignore hold-open) |
-| `set_standby(bool)` | Enable/disable standby mode (power saving) |
-| `set_peak_mode(bool)` | Enable/disable peak mode (faster operation) |
-| `set_pre_flash(bool)` | Enable/disable pre-flash warning light |
-
-Example usage with buttons:
-
-```yaml
-button:
-  - platform: template
-    name: "Enable Auto-Close"
-    on_press:
-      - lambda: id(gate).set_auto_close(true);
-
-  - platform: template
-    name: "Disable Auto-Close"
-    on_press:
-      - lambda: id(gate).set_auto_close(false);
-```
-
-Example usage with switches:
-
-```yaml
-switch:
-  - platform: template
-    name: "Auto-Close"
-    icon: "mdi:timer"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_auto_close(true);
-    turn_off_action:
-      - lambda: id(gate).set_auto_close(false);
-
-  - platform: template
-    name: "Pre-Flash Warning"
-    icon: "mdi:alarm-light"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_pre_flash(true);
-    turn_off_action:
-      - lambda: id(gate).set_pre_flash(false);
-```
-
 ### Raw Configuration Parameters
 
-In addition to the named methods (`set_auto_close`, `set_standby`, etc.), you can set any controller parameter by its raw hex address using `send_config_set()`:
+For on/off configuration flags (auto-close, standby, etc.), use the
+[Switch Platform](#switch-platform). For numeric parameters not yet covered by
+a platform, you can set any controller parameter by its raw hex address using
+`send_config_set()`:
 
 ```yaml
 number:

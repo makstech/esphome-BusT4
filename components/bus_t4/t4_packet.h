@@ -77,15 +77,19 @@ enum T4InfoCommand : uint8_t {
   INF_POS_MIN = 0x19,    // Close position
   INF_IO = 0xD1,         // Input/output state (limit switches)
 
-  // Configuration parameters (settable)
-  CFG_AUTOCLS = 0x80,    // Auto-close (L1) - 0x00=off, 0x01=on
-  CFG_PH_CLS = 0x81,     // Close after photo (L2) - 0x00=off, 0x01=on
-  CFG_ALW_CLS = 0x82,    // Always close (L3) - 0x00=off, 0x01=on
-  CFG_STANDBY = 0x83,    // Standby mode - 0x00=off, 0x01=on
-  CFG_PEAK = 0x84,       // Peak mode - 0x00=off, 0x01=on
-  CFG_PRE_FLASH = 0x85,  // Pre-flash warning - 0x00=off, 0x01=on
-  CFG_CLOSE_SPEED = 0x90, // Close speed (0-100)
-  CFG_OPEN_SPEED = 0x91,  // Open speed (0-100)
+  // Configuration parameters — on/off toggles.
+  // Switch platform types are defined in switch/__init__.py.
+  CFG_AUTOCLS = 0x80,     // Auto-close
+  CFG_PH_CLS = 0x84,      // Close after photo
+  CFG_ALW_CLS = 0x88,     // Always close
+  CFG_STANDBY = 0x8C,     // Standby
+  CFG_PEAK = 0x90,        // Peak
+  CFG_PRE_FLASH = 0x94,   // Pre-flashing
+  CFG_SLAVE = 0x98,        // Slave mode
+
+  // Speed parameters (numeric, 0-100)
+  CFG_OPEN_SPEED = 0x42,  // Opening speed
+  CFG_CLOSE_SPEED = 0x43, // Closing speed
 };
 
 // Request types (byte 11)
