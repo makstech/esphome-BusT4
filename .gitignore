@@ -12,6 +12,9 @@
 # Secrets (never commit!)
 secrets.yaml
 
+# Local dev configs (real devices, scratch tests — never committed)
+*.local.yaml
+
 # Python
 __pycache__/
 *.py[cod]
