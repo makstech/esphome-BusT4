@@ -115,6 +115,12 @@ SELECT_TYPES = {
     "output_4": (0x54, "Output 4 function", "mdi:electric-switch", _out_opts(_OUT_BASIC)),
     "output_5": (0x55, "Output 5 function", "mdi:electric-switch", _out_opts(_OUT_BASIC)),
     "output_6": (0x56, "Output 6 function", "mdi:electric-switch", _out_opts(_OUT_BASIC)),
+    "maintenance_management": (
+        0xB0,
+        "Maintenance management",
+        "mdi:wrench-cog",
+        [(4, "Manual"), (5, "Automatic")],
+    ),
 }
 _SELECT_ENUM = {k: v[0] for k, v in SELECT_TYPES.items()}
 
