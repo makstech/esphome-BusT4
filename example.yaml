@@ -86,7 +86,7 @@ bus_t4:
         icon: "mdi:timer"
       - type: photo_close
         name: "Photo-Close"
-        icon: "mdi:camera-timer"
+        icon: "mdi:motion-sensor"
       - type: always_close
         name: "Always Close"
         icon: "mdi:lock"
@@ -101,7 +101,7 @@ bus_t4:
         icon: "mdi:alarm-light"
       - type: disable_internal_radio
         name: "Disable Internal Radio"
-        icon: "mdi:radio-tower"
+        icon: "mdi:radio-off"
       - type: slave
         name: "Slave Mode"
         icon: "mdi:link-variant"

@@ -3,6 +3,7 @@ from esphome.components import cover, number, switch, text_sensor, uart
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ADDRESS,
+    CONF_ICON,
     CONF_ID,
     CONF_MODE,
     CONF_NAME,
@@ -23,16 +24,16 @@ BusT4Number = bus_t4_ns.class_("BusT4Number", number.Number, cg.Component)
 
 CONF_BUS_T4_ID = "bus_t4_id"
 
-# Config flags: YAML type -> (CFG_* byte, default friendly name). Bytes must match CFG_* in t4_packet.h.
+# Config flags: YAML type -> (CFG_* byte, default name, default icon). Bytes must match CFG_* in t4_packet.h.
 CONFIG_TYPES = {
-    "auto_close": (0x80, "Auto-close"),
-    "photo_close": (0x84, "Close after photo"),
-    "always_close": (0x88, "Always close"),
-    "standby": (0x8C, "Standby"),
-    "peak": (0x90, "Peak"),
-    "pre_flash": (0x94, "Pre-flashing"),
-    "disable_internal_radio": (0x9B, "Disable internal radio"),  # on = internal radio off
-    "slave": (0x98, "Slave mode"),
+    "auto_close": (0x80, "Auto-close", "mdi:gate-arrow-right"),
+    "photo_close": (0x84, "Close after photo", "mdi:motion-sensor"),
+    "always_close": (0x88, "Always close", "mdi:lock"),
+    "standby": (0x8C, "Standby", "mdi:power-standby"),
+    "peak": (0x90, "Peak", "mdi:speedometer"),
+    "pre_flash": (0x94, "Pre-flashing", "mdi:alarm-light"),
+    "disable_internal_radio": (0x9B, "Disable internal radio", "mdi:radio-off"),  # on = radio off
+    "slave": (0x98, "Slave mode", "mdi:link-variant"),
 }
 _FLAG_ENUM = {k: v[0] for k, v in CONFIG_TYPES.items()}
 
@@ -82,14 +83,14 @@ FLAG_SCHEMA = (
 
 
 def _flag(value):
-    # Accept a bare type ("auto_close") or a full map; inject a friendly name from
-    # CONFIG_TYPES before validating, since switch_schema requires id or name.
+    # Accept a bare type ("auto_close") or a full map; inject the default name and
+    # icon from CONFIG_TYPES (switch_schema requires id or name). A map can override.
     if not isinstance(value, dict):
         value = {CONF_TYPE: value}
-    if CONF_NAME not in value and CONF_TYPE in value:
-        key = str(value[CONF_TYPE]).lower()
-        if key in CONFIG_TYPES:
-            value = {**value, CONF_NAME: CONFIG_TYPES[key][1]}
+    key = str(value.get(CONF_TYPE, "")).lower()
+    if key in CONFIG_TYPES:
+        value.setdefault(CONF_NAME, CONFIG_TYPES[key][1])
+        value.setdefault(CONF_ICON, CONFIG_TYPES[key][2])
     return FLAG_SCHEMA(value)
 
 

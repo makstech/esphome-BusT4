@@ -35,8 +35,8 @@ def build_table(config_types: dict) -> str:
         "| `type` | Description |",
         "|--------|-------------|",
     ]
-    for name, (_, desc) in config_types.items():
-        lines.append(f"| `{name}` | {desc} |")
+    for name, spec in config_types.items():
+        lines.append(f"| `{name}` | {spec[1]} |")  # spec = (byte, name, icon)
     return "\n".join(lines)
 
 
