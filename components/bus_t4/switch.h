@@ -2,7 +2,7 @@
 
 #include "esphome/components/switch/switch.h"
 #include "esphome/core/component.h"
-#include "../bus_t4.h"
+#include "bus_t4.h"
 
 namespace esphome::bus_t4 {
 

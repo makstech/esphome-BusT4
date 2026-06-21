@@ -65,17 +65,43 @@ uart:
   rx_pin: GPIO18
   baud_rate: 19200
 
+# One control_unit block creates the gate cover and its config-flag switches.
+# A flag entry is a bare type ("auto_close") or a map with name/icon overrides.
+# Toggling a flag sends a SET; it also tracks GET/SET replies on the bus, so
+# changes made via Oview or another client are reflected immediately.
 bus_t4:
   id: bus
-
-cover:
-  - platform: bus_t4
+  control_unit:
     name: "Gate"
-    id: gate
-    auto_learn_timing: true
-    open_duration: 20s
-    close_duration: 20s
-    position_report_interval: 1s
+    cover:
+      name: "Gate"
+      id: gate
+      auto_learn_timing: true
+      open_duration: 20s
+      close_duration: 20s
+      position_report_interval: 1s
+    flags:
+      - type: auto_close
+        name: "Auto-Close"
+        icon: "mdi:timer"
+      - type: photo_close
+        name: "Photo-Close"
+        icon: "mdi:camera-timer"
+      - type: always_close
+        name: "Always Close"
+        icon: "mdi:lock"
+      - type: standby
+        name: "Standby Mode"
+        icon: "mdi:power-standby"
+      - type: peak
+        name: "Peak Mode"
+        icon: "mdi:speedometer"
+      - type: pre_flash
+        name: "Pre-Flash Warning"
+        icon: "mdi:alarm-light"
+      - type: slave
+        name: "Slave Mode"
+        icon: "mdi:link-variant"
 
 # Optional: Additional buttons for partial opening
 button:
@@ -96,48 +122,6 @@ button:
     icon: "mdi:gate"
     on_press:
       - lambda: id(gate).send_cmd(CMD_STEP);
-
-# Motor controller configuration switches
-# Toggling a switch sends a SET command; the switch also listens to all bus
-# traffic and reacts to GET/SET replies, so changes made via Oview or another
-# client are reflected immediately. Each function is an independent on/off flag.
-# Supported types: auto_close, photo_close, always_close, standby, peak,
-# pre_flash, slave.
-switch:
-  - platform: bus_t4
-    type: auto_close
-    name: "Auto-Close"
-    icon: "mdi:timer"
-
-  - platform: bus_t4
-    type: photo_close
-    name: "Photo-Close"
-    icon: "mdi:camera-timer"
-
-  - platform: bus_t4
-    type: always_close
-    name: "Always Close"
-    icon: "mdi:lock"
-
-  - platform: bus_t4
-    type: standby
-    name: "Standby Mode"
-    icon: "mdi:power-standby"
-
-  - platform: bus_t4
-    type: peak
-    name: "Peak Mode"
-    icon: "mdi:speedometer"
-
-  - platform: bus_t4
-    type: pre_flash
-    name: "Pre-Flash Warning"
-    icon: "mdi:alarm-light"
-
-  - platform: bus_t4
-    type: slave
-    name: "Slave Mode"
-    icon: "mdi:link-variant"
 
 # Security lock using IT4WIFI device identity
 lock:

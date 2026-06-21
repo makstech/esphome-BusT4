@@ -1,6 +1,6 @@
 #include "switch.h"
 #include "esphome/core/log.h"
-#include "../t4_packet.h"
+#include "t4_packet.h"
 
 namespace esphome::bus_t4 {
 

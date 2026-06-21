@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SWITCH_INIT = ROOT / "components" / "bus_t4" / "switch" / "__init__.py"
+SWITCH_INIT = ROOT / "components" / "bus_t4" / "__init__.py"
 
 START = "<!-- BEGIN SWITCH_TYPES -->"
 END = "<!-- END SWITCH_TYPES -->"

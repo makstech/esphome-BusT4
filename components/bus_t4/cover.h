@@ -2,7 +2,7 @@
 
 #include "esphome/components/cover/cover.h"
 #include "esphome/core/preferences.h"
-#include "../bus_t4.h"
+#include "bus_t4.h"
 #include <string>
 
 namespace esphome::bus_t4 {

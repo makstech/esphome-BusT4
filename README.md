@@ -120,11 +120,11 @@ uart:
 
 bus_t4:
   id: bus
-
-cover:
-  - platform: bus_t4
+  control_unit:
     name: "Gate"
-    id: gate
+    cover:
+      name: "Gate"
+      id: gate
 ```
 
 > **Note**: The `minimum_chip_revision: "3.1"` setting is specific to the Nice BiDi-WiFi module (ESP32 rev3.1). It reduces binary size by excluding legacy workaround code. Safe to use with OTA updates — if the chip revision doesn't match, ESPHome will reject the firmware and automatically roll back. Remove or adjust for custom ESP32 hardware. See [ESPHome ESP32 advanced configuration](https://esphome.io/components/esp32/#advanced-configuration) for details.
@@ -153,16 +153,23 @@ uart:
 
 bus_t4:
   id: bus
-  address: 0x5090  # Optional: custom device address
-
-cover:
-  - platform: bus_t4
+  address: 0x5090  # Optional: this ESP module's own bus address
+  control_unit:
     name: "Gate"
-    id: gate
-    auto_learn_timing: true       # Auto-learn open/close duration
-    open_duration: 20s            # Initial/fallback open time
-    close_duration: 20s           # Initial/fallback close time
-    position_report_interval: 1s  # Position update rate
+    cover:
+      name: "Gate"
+      id: gate
+      auto_learn_timing: true       # Auto-learn open/close duration
+      open_duration: 20s            # Initial/fallback open time
+      close_duration: 20s           # Initial/fallback close time
+      position_report_interval: 1s  # Position update rate
+    # Config flags: bare type, or a map with name/icon overrides
+    flags:
+      - auto_close
+      - photo_close
+      - type: peak
+        name: "Starting torque"
+        icon: "mdi:flash"
 
 # Optional: Additional control buttons
 button:
@@ -185,35 +192,26 @@ button:
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `address` | hex | `0x5090` | Device address on the bus |
+| `address` | hex | `0x5090` | This ESP module's own bus address (the `from` field) |
+| `control_unit` | block | — | The motor controller and its entities (see below) |
 
-#### Cover Platform
-
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `name` | string | *Required* | Name for Home Assistant |
-| `auto_learn_timing` | boolean | `true` | Auto-learn open/close duration |
-| `open_duration` | time | `20s` | Initial/fallback time to fully open |
-| `close_duration` | time | `20s` | Initial/fallback time to fully close |
-| `position_report_interval` | time | `1s` | How often to update position during movement |
-
-#### Switch Platform
-
-Exposes a control-unit configuration flag as a switch. Toggling it sends a SET
-command; the switch also listens to all bus traffic and reacts to GET/SET replies,
-so changes made elsewhere (Oview, another client) are reflected immediately.
+#### control_unit
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `type` | enum | *Required* | Which flag to expose (see below) |
-| `bus_t4_id` | id | *auto* | The `bus_t4` component to use |
+| `name` | string | — | Name prefix for auto-created entities |
+| `address` | hex | *auto* | Controller address override; auto-detected via `INF_WHO` when omitted |
+| `cover` | block | — | The gate cover (options below) |
+| `flags` | list | — | Config-flag switches (see types below) |
 
-Supported `type` values (each is an independent on/off function):
+`cover` options: `name` (*required*), `auto_learn_timing` (`true`), `open_duration` (`20s`), `close_duration` (`20s`), `position_report_interval` (`1s`).
+
+Each `flags` entry is a bare type name **or** a map with `name`/`icon` overrides. Toggling a flag sends a SET; it also tracks GET/SET replies on the bus, so changes made elsewhere (Oview, another client) are reflected immediately. A flag the controller doesn't support shows as unavailable.
 
 <!-- BEGIN SWITCH_TYPES -->
 | `type` | Description |
 |--------|-------------|
-| `auto_close` | Auto-close after opening |
+| `auto_close` | Auto-close |
 | `photo_close` | Close after photo |
 | `always_close` | Always close |
 | `standby` | Standby |
@@ -223,13 +221,11 @@ Supported `type` values (each is an independent on/off function):
 <!-- END SWITCH_TYPES -->
 
 ```yaml
-switch:
-  - platform: bus_t4
-    type: photo_close
-    name: "Close after photo"
-  - platform: bus_t4
-    type: auto_close
-    name: "Auto-close"
+bus_t4:
+  id: bus
+  control_unit:
+    name: "Gate"
+    flags: [photo_close, auto_close]
 ```
 
 ### Available Commands

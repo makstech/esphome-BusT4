@@ -53,3 +53,9 @@ class BusT4Device {
 };
 
 } // namespace esphome::bus_t4
+
+// Entity classes live in subdirectories; the hub creates them directly, so pull
+// their headers into this auto-included header (after BusT4Device is defined, so
+// the entities' back-include of this file resolves cleanly).
+#include "cover.h"
+#include "switch.h"
