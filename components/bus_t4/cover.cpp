@@ -52,7 +52,7 @@ void BusT4Cover::loop() {
       ESP_LOGV(TAG, "Periodic status refresh");
       request_status();
       // Also request position if we have encoder support
-      if (has_encoder_ && !is_robus_) {
+      if (has_encoder_) {
         request_position();
       }
     }
@@ -93,9 +93,8 @@ void BusT4Cover::loop() {
       publish_state_if_changed();
     }
 
-    // Poll encoder position during movement (for devices that support it)
-    // Robus devices don't support position queries during movement
-    if (!is_robus_ && init_ok_) {
+    // Poll encoder position during movement, only if the unit has an encoder.
+    if (has_encoder_ && init_ok_) {
       if (now - last_position_update_ >= position_report_interval_) {
         last_position_update_ = now;
         request_position();
@@ -141,9 +140,6 @@ void BusT4Cover::dump_config() {
     // Device-specific modes
     if (is_walky_) {
       ESP_LOGCONFIG(TAG, "  Mode: Walky (1-byte position)");
-    }
-    if (is_robus_) {
-      ESP_LOGCONFIG(TAG, "  Mode: Robus (no position query during movement)");
     }
 
     // Position tracking mode
@@ -559,6 +555,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       ESP_LOGI(TAG, "Max encoder position: %d", pos);
       if (pos > 0 && pos != 0xFFFF) {
         pos_max_ = pos;
+        has_encoder_ = true;  // a valid extent means the unit reports encoder position
       }
       break;
     }
@@ -707,10 +704,6 @@ void BusT4Cover::init_device() {
         is_walky_ = true;
         ESP_LOGI(TAG, "Detected Walky device - using 1-byte position mode");
       }
-      if (parent_->product().find(PRODUCT_ROBUS) == 0) {
-        is_robus_ = true;
-        ESP_LOGI(TAG, "Detected Robus device - position queries disabled during movement");
-      }
       has_oxi_ = parent_->has_oxi();
       oxi_address_ = parent_->get_oxi_address();
       if (has_oxi_)
@@ -793,9 +786,6 @@ void BusT4Cover::request_status_confirmation() {
 
 void BusT4Cover::update_position(uint16_t encoder_pos) {
   pos_current_ = encoder_pos;
-
-  // Mark that we have encoder support and update timestamp
-  has_encoder_ = true;
   last_encoder_update_ = millis();
 
   // Convert encoder position to percentage

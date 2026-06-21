@@ -29,11 +29,8 @@ struct LearnedDurations {
   bool valid;  // Set to true after first successful learning
 };
 
-// Known product identifiers for device-specific handling
-// Products starting with WLA = Walky (uses 1-byte position)
+// Products starting with WLA = Walky (uses 1-byte position values)
 static const std::string PRODUCT_WALKY = "WLA";
-// Products starting with ROB = Robus family (no position query during movement)
-static const std::string PRODUCT_ROBUS = "ROB";
 
 class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
  public:
@@ -83,9 +80,8 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   uint8_t discovery_attempts_{0};  // Discovery retry counter for exponential backoff
   uint32_t get_discovery_interval() const;  // Get current discovery retry interval
 
-  // Device-specific handling, derived from the controller product string.
-  bool is_walky_{false};               // Walky gates: 1-byte position values
-  bool is_robus_{false};               // Robus gates: no position query during movement
+  // Walky gates report 1-byte position values (derived from the product string).
+  bool is_walky_{false};
 
   // OXI receiver tracking
   T4Source oxi_address_{0x00, 0x00};   // OXI receiver address (if present)
