@@ -143,14 +143,18 @@ void BusT4Component::discover_() {
   manufacturer_ = fetch_string_(controller_address_, INF_MAN);
   product_ = fetch_string_(controller_address_, INF_PRD);
   firmware_ = fetch_string_(controller_address_, INF_FRM);
-  if (!product_.empty()) {
-    ESP_LOGI(TAG, "Product: %s", product_.c_str());
-    this->publish_product(product_);
-  }
-  if (!firmware_.empty()) {
-    ESP_LOGI(TAG, "Firmware: %s (manufacturer: %s)", firmware_.c_str(), manufacturer_.c_str());
-    this->publish_firmware(firmware_);
-  }
+  hardware_ = fetch_string_(controller_address_, INF_HWR);
+  description_ = fetch_string_(controller_address_, INF_DSC);
+  ESP_LOGI(TAG, "Identity: %s %s hw=%s fw=%s (%s)", manufacturer_.c_str(), product_.c_str(),
+           hardware_.c_str(), firmware_.c_str(), description_.c_str());
+  if (product_sensor_ != nullptr && !product_.empty())
+    product_sensor_->publish_state(product_);
+  if (firmware_sensor_ != nullptr && !firmware_.empty())
+    firmware_sensor_->publish_state(firmware_);
+  if (hardware_sensor_ != nullptr && !hardware_.empty())
+    hardware_sensor_->publish_state(hardware_);
+  if (description_sensor_ != nullptr && !description_.empty())
+    description_sensor_->publish_state(description_);
   discovered_ = true;
 }
 

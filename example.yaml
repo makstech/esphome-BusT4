@@ -102,7 +102,7 @@ bus_t4:
       - type: slave
         name: "Slave Mode"
         icon: "mdi:link-variant"
-    version: true   # firmware + product text_sensors (diagnostic)
+    version: true   # firmware/product/hardware/description text_sensors (diagnostic)
 
 # Optional: Additional buttons for partial opening
 button:

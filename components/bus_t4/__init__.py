@@ -38,6 +38,8 @@ CONF_FLAGS = "flags"
 CONF_VERSION = "version"
 CONF_FIRMWARE = "firmware"
 CONF_PRODUCT = "product"
+CONF_HARDWARE = "hardware"
+CONF_DESCRIPTION = "description"
 CONF_OPEN_DURATION = "open_duration"
 CONF_CLOSE_DURATION = "close_duration"
 CONF_AUTO_LEARN_TIMING = "auto_learn_timing"
@@ -83,16 +85,16 @@ def _version(value):
     # `version: true` creates both sensors with default names; a map renames either.
     if value is True:
         value = {}
+    diag = cv.maybe_simple_value(
+        text_sensor.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
+        key=CONF_NAME,
+    )
     return cv.Schema(
         {
-            cv.Optional(CONF_FIRMWARE, default="Firmware"): cv.maybe_simple_value(
-                text_sensor.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
-                key=CONF_NAME,
-            ),
-            cv.Optional(CONF_PRODUCT, default="Product"): cv.maybe_simple_value(
-                text_sensor.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
-                key=CONF_NAME,
-            ),
+            cv.Optional(CONF_FIRMWARE, default="Firmware"): diag,
+            cv.Optional(CONF_PRODUCT, default="Product"): diag,
+            cv.Optional(CONF_HARDWARE, default="Hardware"): diag,
+            cv.Optional(CONF_DESCRIPTION, default="Description"): diag,
         }
     )(value)
 
@@ -166,3 +168,5 @@ async def to_code(config):
         v = cu[CONF_VERSION]
         cg.add(var.set_firmware_sensor(await text_sensor.new_text_sensor(v[CONF_FIRMWARE])))
         cg.add(var.set_product_sensor(await text_sensor.new_text_sensor(v[CONF_PRODUCT])))
+        cg.add(var.set_hardware_sensor(await text_sensor.new_text_sensor(v[CONF_HARDWARE])))
+        cg.add(var.set_description_sensor(await text_sensor.new_text_sensor(v[CONF_DESCRIPTION])))

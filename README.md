@@ -203,7 +203,7 @@ button:
 | `address` | hex | *auto* | Controller address override; auto-detected via `INF_WHO` when omitted |
 | `cover` | block | — | The gate cover (options below) |
 | `flags` | list | — | Config-flag switches (see types below) |
-| `version` | bool/map | — | `true` adds firmware + product diagnostic sensors (or a map to rename them) |
+| `version` | bool/map | — | `true` adds firmware/product/hardware/description diagnostic sensors (or a map to rename them) |
 
 `cover` options: `name` (*required*), `auto_learn_timing` (`true`), `open_duration` (`20s`), `close_duration` (`20s`), `position_report_interval` (`1s`).
 

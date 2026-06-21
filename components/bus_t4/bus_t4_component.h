@@ -67,17 +67,11 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   // Register a device to receive packet callbacks
   void register_device(BusT4Device *device) { devices_.push_back(device); }
 
-  // Controller identity, discovered by the cover and surfaced here for HA.
+  // Controller identity sensors, fed by discover_().
   void set_firmware_sensor(text_sensor::TextSensor *s) { firmware_sensor_ = s; }
   void set_product_sensor(text_sensor::TextSensor *s) { product_sensor_ = s; }
-  void publish_firmware(const std::string &s) {
-    if (firmware_sensor_ != nullptr)
-      firmware_sensor_->publish_state(s);
-  }
-  void publish_product(const std::string &s) {
-    if (product_sensor_ != nullptr)
-      product_sensor_->publish_state(s);
-  }
+  void set_hardware_sensor(text_sensor::TextSensor *s) { hardware_sensor_ = s; }
+  void set_description_sensor(text_sensor::TextSensor *s) { description_sensor_ = s; }
 
   // Propagate the discovered controller address to every registered device
   // (each ignores it if its address was pinned via config).
@@ -124,6 +118,8 @@ class BusT4Component final : public Component, public uart::UARTDevice {
 
   text_sensor::TextSensor *firmware_sensor_{nullptr};
   text_sensor::TextSensor *product_sensor_{nullptr};
+  text_sensor::TextSensor *hardware_sensor_{nullptr};
+  text_sensor::TextSensor *description_sensor_{nullptr};
 
   bool discovered_{false};
   uint32_t last_discover_{0};
@@ -133,6 +129,8 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   std::string manufacturer_;
   std::string product_;
   std::string firmware_;
+  std::string hardware_;
+  std::string description_;
 
   // Cached UART port for direct baud rate register writes during break signal.
   uart_port_t uart_num_ = UART_NUM_MAX;
