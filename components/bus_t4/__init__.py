@@ -37,6 +37,8 @@ CONFIG_TYPES = {
     "pre_flash": (0x94, "Pre-flashing", "mdi:alarm-light"),
     "disable_internal_radio": (0x9B, "Disable internal radio", "mdi:radio-off"),  # on = radio off
     "slave": (0x98, "Slave mode", "mdi:link-variant"),
+    "automation_lock": (0x9A, "Automation lock", "mdi:lock-outline"),
+    "button_lock": (0x9C, "Button lock", "mdi:lock-pattern"),
 }
 _FLAG_ENUM = {k: v[0] for k, v in CONFIG_TYPES.items()}
 
@@ -52,6 +54,8 @@ NUMBER_TYPES = {
     "photo_close_time": (0x85, 0, 250, 1, "s", "Close after photo time", "mdi:timer-outline", 1),
     "always_close_time": (0x89, 0, 20, 1, "s", "Always-close time", "mdi:timer-outline", 1),
     "standby_time": (0x8D, 5, 250, 1, "s", "Stand-by time", "mdi:timer-outline", 1),
+    "max_work_time": (0xA7, 10, 250, 1, "s", "Maximum work time", "mdi:timer-alert-outline", 1),
+    "courtesy_light_time": (0x5B, 0, 240, 1, "s", "Courtesy light time", "mdi:lightbulb-on-outline", 1),
 }
 _NUMBER_ENUM = {k: v[0] for k, v in NUMBER_TYPES.items()}
 
