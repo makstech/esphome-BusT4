@@ -49,6 +49,9 @@ NUMBER_TYPES = {
     "force_opening": (0x4A, 0, 100, 1, "%", "Opening force", "mdi:arm-flex", 1),
     "force_closing": (0x4B, 0, 100, 1, "%", "Closing force", "mdi:arm-flex-outline", 1),
     "maintenance_threshold": (0xB1, 100, 20000, 100, "", "Maintenance threshold", "mdi:wrench-clock", 4),
+    "photo_close_time": (0x85, 0, 250, 1, "s", "Close after photo time", "mdi:timer-outline", 1),
+    "always_close_time": (0x89, 0, 20, 1, "s", "Always-close time", "mdi:timer-outline", 1),
+    "standby_time": (0x8D, 5, 250, 1, "s", "Stand-by time", "mdi:timer-outline", 1),
 }
 _NUMBER_ENUM = {k: v[0] for k, v in NUMBER_TYPES.items()}
 
@@ -127,6 +130,24 @@ SELECT_TYPES = {
         "Maintenance management",
         "mdi:wrench-cog",
         [(4, "Manual"), (5, "Automatic")],
+    ),
+    "photo_close_mode": (
+        0x86,
+        "Close after photo mode",
+        "mdi:gate-open",
+        [(16, "Open fully"), (17, "Open until disengagement")],
+    ),
+    "always_close_mode": (
+        0x8A,
+        "Always-close mode",
+        "mdi:gate-alert",
+        [(32, "Always close"), (33, "Save closing")],
+    ),
+    "standby_mode": (
+        0x8E,
+        "Stand-by mode",
+        "mdi:sleep",
+        [(48, "BlueBus"), (49, "Safety devices"), (50, "All"), (56, "All, Wi-Fi on")],
     ),
 }
 _SELECT_ENUM = {k: v[0] for k, v in SELECT_TYPES.items()}
