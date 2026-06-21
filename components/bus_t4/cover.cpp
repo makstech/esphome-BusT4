@@ -528,9 +528,9 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     }
 
     case INF_POS_MAX: {
-      // Open position (2 bytes, big endian)
+      // Open position (2 bytes, big endian). 0xFFFF = not calibrated.
       uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
-      if (pos > 0) {
+      if (pos > 0 && pos != 0xFFFF) {
         pos_max_ = pos;
         ESP_LOGI(TAG, "Open position: %d", pos_max_);
       }
@@ -538,10 +538,12 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     }
 
     case INF_POS_MIN: {
-      // Close position (2 bytes, big endian)
+      // Close position (2 bytes, big endian). 0xFFFF = not calibrated; keep default 0.
       uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
-      pos_min_ = pos;
-      ESP_LOGI(TAG, "Close position: %d", pos_min_);
+      if (pos != 0xFFFF) {
+        pos_min_ = pos;
+        ESP_LOGI(TAG, "Close position: %d", pos_min_);
+      }
       break;
     }
 
@@ -555,7 +557,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
         pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
       }
       ESP_LOGI(TAG, "Max encoder position: %d", pos);
-      if (pos > 0) {
+      if (pos > 0 && pos != 0xFFFF) {
         pos_max_ = pos;
       }
       break;
