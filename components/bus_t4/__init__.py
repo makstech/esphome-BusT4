@@ -31,6 +31,7 @@ CONFIG_TYPES = {
     "standby": (0x8C, "Standby"),
     "peak": (0x90, "Peak"),
     "pre_flash": (0x94, "Pre-flashing"),
+    "disable_internal_radio": (0x9B, "Disable internal radio"),  # on = internal radio off
     "slave": (0x98, "Slave mode"),
 }
 _FLAG_ENUM = {k: v[0] for k, v in CONFIG_TYPES.items()}

@@ -99,9 +99,14 @@ bus_t4:
       - type: pre_flash
         name: "Pre-Flash Warning"
         icon: "mdi:alarm-light"
+      - type: disable_internal_radio
+        name: "Disable Internal Radio"
+        icon: "mdi:radio-tower"
       - type: slave
         name: "Slave Mode"
         icon: "mdi:link-variant"
+    # Numeric params (range + unit come from the controller)
+    numbers: [pause_time]
     diagnostics: true   # firmware/product/hardware/description text_sensors
 
 # Optional: Additional buttons for partial opening

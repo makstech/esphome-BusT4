@@ -203,6 +203,7 @@ button:
 | `address` | hex | *auto* | Controller address override; auto-detected via `INF_WHO` when omitted |
 | `cover` | block | — | The gate cover (options below) |
 | `flags` | list | — | Config-flag switches (see types below) |
+| `numbers` | list | — | Numeric param `number`s; currently `pause_time` (auto-close pause, 0–240 s) |
 | `diagnostics` | bool/map | — | `true` adds firmware/product/hardware/description diagnostic sensors (or a map to rename them) |
 
 `cover` options: `name` (*required*), `auto_learn_timing` (`true`), `open_duration` (`20s`), `close_duration` (`20s`), `position_report_interval` (`1s`).
@@ -218,6 +219,7 @@ Each `flags` entry is a bare type name **or** a map with `name`/`icon` overrides
 | `standby` | Standby |
 | `peak` | Peak |
 | `pre_flash` | Pre-flashing |
+| `disable_internal_radio` | Disable internal radio |
 | `slave` | Slave mode |
 <!-- END SWITCH_TYPES -->
 
