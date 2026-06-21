@@ -46,10 +46,16 @@ class BusT4Device {
   // Get the address of the motor controller we're talking to
   T4Source get_target_address() const { return target_address_; }
   void set_target_address(T4Source addr) { target_address_ = addr; }
+  // Pin the target from a configured 0xAABB address; locks it against discovery.
+  void set_target_address(uint16_t addr) {
+    target_address_ = {static_cast<uint8_t>(addr >> 8), static_cast<uint8_t>(addr & 0xFF)};
+    target_locked_ = true;
+  }
 
  protected:
   BusT4Component *parent_{nullptr};
   T4Source target_address_{0x00, 0x03};  // Default motor controller address
+  bool target_locked_{false};            // true when the address was configured (skip discovery override)
 };
 
 } // namespace esphome::bus_t4

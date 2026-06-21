@@ -486,13 +486,13 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       ESP_LOGI(TAG, "INF_WHO response: device_type=0x%02X from 0x%02X.%02X",
                responder_type, packet.header.from.address, packet.header.from.endpoint);
 
-      // Accept controller (0x04), endpoint 0x03, OR radio/OXI (0x0A)
-      // Some units (MC842) respond as OXI even if they're motor controllers
-      if (responder_type == CONTROLLER || packet.header.from.endpoint == 0x03) {
+      // Identify by the reported device type (matches pruwait/gashtaan).
+      if (responder_type == CONTROLLER) {
         // Primary motor controller found
         ESP_LOGI(TAG, "Found motor controller at 0x%02X.%02X",
                  packet.header.from.address, packet.header.from.endpoint);
-        target_address_ = packet.header.from;
+        if (!target_locked_)  // a configured address wins over discovery
+          target_address_ = packet.header.from;
         if (init_step_ == 0) {
           init_step_ = 1;  // Move to next init step
           discovery_attempts_ = 0;  // Reset backoff on success

@@ -116,11 +116,15 @@ async def to_code(config):
         return
     cu = config[CONF_CONTROL_UNIT]
 
+    cu_address = cu.get(CONF_ADDRESS)  # controller address override (pins the target)
+
     if CONF_COVER in cu:
         cc = cu[CONF_COVER]
         cov = await cover.new_cover(cc)
         await cg.register_component(cov, cc)
         cg.add(cov.set_parent(var))
+        if cu_address is not None:
+            cg.add(cov.set_target_address(cu_address))
         cg.add(cov.set_open_duration(cc[CONF_OPEN_DURATION]))
         cg.add(cov.set_close_duration(cc[CONF_CLOSE_DURATION]))
         cg.add(cov.set_auto_learn_timing(cc[CONF_AUTO_LEARN_TIMING]))
@@ -130,4 +134,6 @@ async def to_code(config):
         sw = await switch.new_switch(fc)
         await cg.register_component(sw, fc)
         cg.add(sw.set_parent(var))
+        if cu_address is not None:
+            cg.add(sw.set_target_address(cu_address))
         cg.add(sw.set_param(fc[CONF_TYPE]))
