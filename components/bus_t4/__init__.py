@@ -42,20 +42,23 @@ CONFIG_TYPES = {
 }
 _FLAG_ENUM = {k: v[0] for k, v in CONFIG_TYPES.items()}
 
-# Numeric params: YAML type -> (param byte, min, max, step, unit, default name, icon, width).
+# Numeric params: YAML type -> (param byte, min, max, step, unit, default name, icon, width, scale).
+# min/max/step are displayed values; the displayed value is raw*scale (0.1 = tenths).
 # Ranges/units come from the controller's command-info (verified live on RBS400).
 NUMBER_TYPES = {
-    "pause_time": (0x81, 0, 240, 1, "s", "Auto-close pause time", "mdi:timer-sand", 1),
-    "speed_opening": (0x42, 25, 100, 1, "%", "Opening speed", "mdi:speedometer", 1),
-    "speed_closing": (0x43, 25, 100, 1, "%", "Closing speed", "mdi:speedometer-medium", 1),
-    "force_opening": (0x4A, 0, 100, 1, "%", "Opening force", "mdi:arm-flex", 1),
-    "force_closing": (0x4B, 0, 100, 1, "%", "Closing force", "mdi:arm-flex-outline", 1),
-    "maintenance_threshold": (0xB1, 100, 20000, 100, "", "Maintenance threshold", "mdi:wrench-clock", 4),
-    "photo_close_time": (0x85, 0, 250, 1, "s", "Close after photo time", "mdi:timer-outline", 1),
-    "always_close_time": (0x89, 0, 20, 1, "s", "Always-close time", "mdi:timer-outline", 1),
-    "standby_time": (0x8D, 5, 250, 1, "s", "Stand-by time", "mdi:timer-outline", 1),
-    "max_work_time": (0xA7, 10, 250, 1, "s", "Maximum work time", "mdi:timer-alert-outline", 1),
-    "courtesy_light_time": (0x5B, 0, 240, 1, "s", "Courtesy light time", "mdi:lightbulb-on-outline", 1),
+    "pause_time": (0x81, 0, 240, 1, "s", "Auto-close pause time", "mdi:timer-sand", 1, 1),
+    "speed_opening": (0x42, 25, 100, 1, "%", "Opening speed", "mdi:speedometer", 1, 1),
+    "speed_closing": (0x43, 25, 100, 1, "%", "Closing speed", "mdi:speedometer-medium", 1, 1),
+    "force_opening": (0x4A, 0, 100, 1, "%", "Opening force", "mdi:arm-flex", 1, 1),
+    "force_closing": (0x4B, 0, 100, 1, "%", "Closing force", "mdi:arm-flex-outline", 1, 1),
+    "maintenance_threshold": (0xB1, 100, 20000, 100, "", "Maintenance threshold", "mdi:wrench-clock", 4, 1),
+    "photo_close_time": (0x85, 0, 250, 1, "s", "Close after photo time", "mdi:timer-outline", 1, 1),
+    "always_close_time": (0x89, 0, 20, 1, "s", "Always-close time", "mdi:timer-outline", 1, 1),
+    "standby_time": (0x8D, 5, 250, 1, "s", "Stand-by time", "mdi:timer-outline", 1, 1),
+    "max_work_time": (0xA7, 10, 250, 1, "s", "Maximum work time", "mdi:timer-alert-outline", 1, 1),
+    "courtesy_light_time": (0x5B, 0, 240, 1, "s", "Courtesy light time", "mdi:lightbulb-on-outline", 1, 1),
+    "electric_lock_time": (0x5A, 0.1, 10, 0.1, "s", "Electric lock time", "mdi:lock-clock", 1, 0.1),
+    "brief_reversal": (0x31, 0.5, 5, 0.1, "s", "Brief reversal", "mdi:backup-restore", 1, 0.1),
 }
 _NUMBER_ENUM = {k: v[0] for k, v in NUMBER_TYPES.items()}
 
@@ -385,7 +388,7 @@ async def to_code(config):
 
     for nc in cu[CONF_NUMBERS]:
         # cv.enum keeps the type name; look up its spec, then pass the byte to set_param.
-        byte, nmin, nmax, nstep, _unit, _name, _icon, width = NUMBER_TYPES[str(nc[CONF_TYPE])]
+        byte, nmin, nmax, nstep, _unit, _name, _icon, width, scale = NUMBER_TYPES[str(nc[CONF_TYPE])]
         num = await number.new_number(nc, min_value=nmin, max_value=nmax, step=nstep)
         await cg.register_component(num, nc)
         cg.add(num.set_parent(var))
@@ -393,6 +396,7 @@ async def to_code(config):
             cg.add(num.set_target_address(cu_address))
         cg.add(num.set_param(byte))
         cg.add(num.set_width(width))
+        cg.add(num.set_scale(scale))
 
     for nc in cu[CONF_SENSORS]:
         byte, _name, _icon, width = SENSOR_TYPES[str(nc[CONF_TYPE])]
