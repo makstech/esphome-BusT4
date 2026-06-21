@@ -491,8 +491,8 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
         // Primary motor controller found
         ESP_LOGI(TAG, "Found motor controller at 0x%02X.%02X",
                  packet.header.from.address, packet.header.from.endpoint);
-        if (!target_locked_)  // a configured address wins over discovery
-          target_address_ = packet.header.from;
+        // Share the resolved address with all devices (each ignores it if pinned).
+        parent_->set_controller_address(packet.header.from);
         if (init_step_ == 0) {
           init_step_ = 1;  // Move to next init step
           discovery_attempts_ = 0;  // Reset backoff on success
@@ -691,6 +691,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
             product_name_.resize(null_pos);
           }
           ESP_LOGI(TAG, "Product: %s", product_name_.c_str());
+          parent_->publish_product(product_name_);
 
           // Detect device-specific modes based on product name prefix
           if (product_name_.find(PRODUCT_WALKY) == 0) {
@@ -727,6 +728,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
             firmware_version_.resize(null_pos);
           }
           ESP_LOGI(TAG, "Firmware: %s", firmware_version_.c_str());
+          parent_->publish_firmware(firmware_version_);
         }
       }
       break;

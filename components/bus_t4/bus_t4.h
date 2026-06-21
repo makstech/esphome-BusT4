@@ -52,6 +52,12 @@ class BusT4Device {
     target_locked_ = true;
   }
 
+  // Called by the component when WHO resolves the controller; ignored if pinned.
+  void on_controller_resolved(T4Source addr) {
+    if (!target_locked_)
+      target_address_ = addr;
+  }
+
  protected:
   BusT4Component *parent_{nullptr};
   T4Source target_address_{0x00, 0x03};  // Default motor controller address

@@ -1,5 +1,5 @@
 import esphome.codegen as cg
-from esphome.components import cover, switch, uart
+from esphome.components import cover, switch, text_sensor, uart
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ADDRESS,
@@ -7,6 +7,7 @@ from esphome.const import (
     CONF_NAME,
     CONF_TYPE,
     ENTITY_CATEGORY_CONFIG,
+    ENTITY_CATEGORY_DIAGNOSTIC,
 )
 
 DEPENDENCIES = ["uart"]
@@ -34,6 +35,9 @@ _FLAG_ENUM = {k: v[0] for k, v in CONFIG_TYPES.items()}
 CONF_CONTROL_UNIT = "control_unit"
 CONF_COVER = "cover"
 CONF_FLAGS = "flags"
+CONF_VERSION = "version"
+CONF_FIRMWARE = "firmware"
+CONF_PRODUCT = "product"
 CONF_OPEN_DURATION = "open_duration"
 CONF_CLOSE_DURATION = "close_duration"
 CONF_AUTO_LEARN_TIMING = "auto_learn_timing"
@@ -74,12 +78,32 @@ def _flag(value):
             value = {**value, CONF_NAME: CONFIG_TYPES[key][1]}
     return FLAG_SCHEMA(value)
 
+
+def _version(value):
+    # `version: true` creates both sensors with default names; a map renames either.
+    if value is True:
+        value = {}
+    return cv.Schema(
+        {
+            cv.Optional(CONF_FIRMWARE, default="Firmware"): cv.maybe_simple_value(
+                text_sensor.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
+                key=CONF_NAME,
+            ),
+            cv.Optional(CONF_PRODUCT, default="Product"): cv.maybe_simple_value(
+                text_sensor.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
+                key=CONF_NAME,
+            ),
+        }
+    )(value)
+
+
 CONTROL_UNIT_SCHEMA = cv.Schema(
     {
         cv.Optional(CONF_NAME): cv.string,
-        cv.Optional(CONF_ADDRESS): cv.hex_uint16_t,  # control-unit address override (Step 2)
+        cv.Optional(CONF_ADDRESS): cv.hex_uint16_t,  # control-unit address override
         cv.Optional(CONF_COVER): COVER_SCHEMA,
         cv.Optional(CONF_FLAGS, default=[]): cv.ensure_list(_flag),
+        cv.Optional(CONF_VERSION): _version,
     }
 )
 
@@ -137,3 +161,8 @@ async def to_code(config):
         if cu_address is not None:
             cg.add(sw.set_target_address(cu_address))
         cg.add(sw.set_param(fc[CONF_TYPE]))
+
+    if CONF_VERSION in cu:
+        v = cu[CONF_VERSION]
+        cg.add(var.set_firmware_sensor(await text_sensor.new_text_sensor(v[CONF_FIRMWARE])))
+        cg.add(var.set_product_sensor(await text_sensor.new_text_sensor(v[CONF_PRODUCT])))

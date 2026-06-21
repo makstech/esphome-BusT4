@@ -71,6 +71,11 @@ void BusT4Component::dispatch_packet_(const T4Packet &packet) {
     device->on_packet(packet);
 }
 
+void BusT4Component::set_controller_address(T4Source addr) {
+  for (auto *device : devices_)
+    device->on_controller_resolved(addr);
+}
+
 void BusT4Component::dump_config() {
   ESP_LOGCONFIG(TAG, "BusT4:");
   ESP_LOGCONFIG(TAG, "  Address: 0x%02X%02X", address_.address, address_.endpoint);
