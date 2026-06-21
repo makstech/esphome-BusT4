@@ -88,9 +88,13 @@ enum T4InfoCommand : uint8_t {
   CFG_SLAVE = 0x98,        // Slave mode
   CFG_DISABLE_RADIO = 0x9B, // Disable internal radio (on = internal radio off)
 
-  // Speed parameters (numeric, 0-100)
+  // Speed parameters (numeric, 25-100)
   CFG_OPEN_SPEED = 0x42,  // Opening speed
   CFG_CLOSE_SPEED = 0x43, // Closing speed
+
+  // Force parameters (numeric, 0-100%)
+  CFG_OPEN_FORCE = 0x4A,  // Opening force
+  CFG_CLOSE_FORCE = 0x4B, // Closing force
 };
 
 // Request types (byte 11)

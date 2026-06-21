@@ -42,6 +42,10 @@ _FLAG_ENUM = {k: v[0] for k, v in CONFIG_TYPES.items()}
 # Ranges/units come from the controller's command-info (verified live on RBS400).
 NUMBER_TYPES = {
     "pause_time": (0x81, 0, 240, 1, "s", "Auto-close pause time", "mdi:timer-sand"),
+    "speed_opening": (0x42, 25, 100, 1, "%", "Opening speed", "mdi:speedometer"),
+    "speed_closing": (0x43, 25, 100, 1, "%", "Closing speed", "mdi:speedometer-medium"),
+    "force_opening": (0x4A, 0, 100, 1, "%", "Opening force", "mdi:arm-flex"),
+    "force_closing": (0x4B, 0, 100, 1, "%", "Closing force", "mdi:arm-flex-outline"),
 }
 _NUMBER_ENUM = {k: v[0] for k, v in NUMBER_TYPES.items()}
 
