@@ -1,5 +1,5 @@
 import esphome.codegen as cg
-from esphome.components import cover, number, select, sensor, switch, text_sensor, uart
+from esphome.components import button, cover, number, select, sensor, switch, text_sensor, uart
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ADDRESS,
@@ -14,7 +14,7 @@ from esphome.const import (
 )
 
 DEPENDENCIES = ["uart"]
-AUTO_LOAD = ["cover", "switch", "text_sensor", "number", "select", "sensor"]
+AUTO_LOAD = ["cover", "switch", "text_sensor", "number", "select", "sensor", "button"]
 
 bus_t4_ns = cg.esphome_ns.namespace("bus_t4")
 BusT4Component = bus_t4_ns.class_("BusT4Component", cg.Component, uart.UARTDevice)
@@ -23,6 +23,7 @@ BusT4Switch = bus_t4_ns.class_("BusT4Switch", switch.Switch, cg.Component)
 BusT4Number = bus_t4_ns.class_("BusT4Number", number.Number, cg.Component)
 BusT4Select = bus_t4_ns.class_("BusT4Select", select.Select, cg.Component)
 BusT4Sensor = bus_t4_ns.class_("BusT4Sensor", sensor.Sensor, cg.PollingComponent)
+BusT4Button = bus_t4_ns.class_("BusT4Button", button.Button, cg.Component)
 
 CONF_BUS_T4_ID = "bus_t4_id"
 
@@ -57,6 +58,12 @@ SENSOR_TYPES = {
     "total_maneuvers": (0xB3, "Total maneuvers", "mdi:counter", 4),
 }
 _SENSOR_ENUM = {k: v[0] for k, v in SENSOR_TYPES.items()}
+
+# Action params: YAML type -> (param byte, value written on press, default name, default icon).
+BUTTON_TYPES = {
+    "reset_maintenance": (0xB4, 1, "Reset maintenance counter", "mdi:restart"),
+}
+_BUTTON_ENUM = {k: v[0] for k, v in BUTTON_TYPES.items()}
 
 # Output-function labels from the manual's output configuration table, raw -> label.
 _OUTPUT_FUNCTIONS = {
@@ -130,6 +137,7 @@ CONF_FLAGS = "flags"
 CONF_NUMBERS = "numbers"
 CONF_SELECTS = "selects"
 CONF_SENSORS = "sensors"
+CONF_BUTTONS = "buttons"
 CONF_DIAGNOSTICS = "diagnostics"
 CONF_FIRMWARE = "firmware"
 CONF_PRODUCT = "product"
@@ -243,6 +251,26 @@ def _sensor(value):
     return SENSOR_SCHEMA(value)
 
 
+BUTTON_SCHEMA = (
+    button.button_schema(BusT4Button, entity_category=ENTITY_CATEGORY_CONFIG)
+    .extend(cv.COMPONENT_SCHEMA)
+    .extend({cv.Required(CONF_TYPE): cv.enum(_BUTTON_ENUM, lower=True)})
+)
+
+
+def _button(value):
+    # Bare type ("reset_maintenance") or a map; inject the default name + icon
+    # from BUTTON_TYPES before validating (button_schema requires id or name).
+    if not isinstance(value, dict):
+        value = {CONF_TYPE: value}
+    key = str(value.get(CONF_TYPE, "")).lower()
+    if key in BUTTON_TYPES:
+        spec = BUTTON_TYPES[key]
+        value.setdefault(CONF_NAME, spec[2])
+        value.setdefault(CONF_ICON, spec[3])
+    return BUTTON_SCHEMA(value)
+
+
 def _diagnostics(value):
     # `diagnostics: true` creates the sensors with default names; a map renames them.
     if value is True:
@@ -270,6 +298,7 @@ CONTROL_UNIT_SCHEMA = cv.Schema(
         cv.Optional(CONF_NUMBERS, default=[]): cv.ensure_list(_number),
         cv.Optional(CONF_SELECTS, default=[]): cv.ensure_list(_select),
         cv.Optional(CONF_SENSORS, default=[]): cv.ensure_list(_sensor),
+        cv.Optional(CONF_BUTTONS, default=[]): cv.ensure_list(_button),
         cv.Optional(CONF_DIAGNOSTICS): _diagnostics,
     }
 )
@@ -349,6 +378,16 @@ async def to_code(config):
             cg.add(sen.set_target_address(cu_address))
         cg.add(sen.set_param(byte))
         cg.add(sen.set_width(width))
+
+    for bc in cu[CONF_BUTTONS]:
+        byte, val, _name, _icon = BUTTON_TYPES[str(bc[CONF_TYPE])]
+        btn = await button.new_button(bc)
+        await cg.register_component(btn, bc)
+        cg.add(btn.set_parent(var))
+        if cu_address is not None:
+            cg.add(btn.set_target_address(cu_address))
+        cg.add(btn.set_param(byte))
+        cg.add(btn.set_value(val))
 
     for sc in cu[CONF_SELECTS]:
         byte, _name, _icon, opts = SELECT_TYPES[str(sc[CONF_TYPE])]

@@ -77,3 +77,4 @@ class BusT4Device {
 #include "number.h"
 #include "select.h"
 #include "sensor.h"
+#include "button.h"
