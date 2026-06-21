@@ -33,7 +33,7 @@ CONFIG_TYPES = {
     "photo_close": (0x84, "Close after photo", "mdi:motion-sensor"),
     "always_close": (0x88, "Always close", "mdi:lock"),
     "standby": (0x8C, "Standby", "mdi:power-standby"),
-    "peak": (0x90, "Peak", "mdi:speedometer"),
+    "surge": (0x90, "Surge", "mdi:rocket-launch"),
     "pre_flash": (0x94, "Pre-flashing", "mdi:alarm-light"),
     "disable_internal_radio": (0x9B, "Disable internal radio", "mdi:radio-off"),  # on = radio off
     "slave": (0x98, "Slave mode", "mdi:link-variant"),

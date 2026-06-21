@@ -16,7 +16,7 @@ ESPHome component for integrating **Nice gate and garage door automation** into 
 - 📊 **Real-time status** - Opening, closing, stopped, fully open/closed states
 - 📏 **Position tracking** - Time-based estimation with encoder priority when available
 - 🧠 **Auto-learning** - Automatically learns and re-learns your gate's open/close timing
-- ⚙️ **Motor configuration** - Control auto-close, standby, peak mode, and more via SET commands
+- ⚙️ **Motor configuration** - Control auto-close, standby, surge mode, and more via SET commands
 - 🔧 **Wide compatibility** - Device-specific handling for Walky, Robus, Road 400, and more
 - 📡 **OXI receiver logging** - Remote control button presses are logged for debugging
 
@@ -167,7 +167,7 @@ bus_t4:
     flags:
       - auto_close
       - photo_close
-      - type: peak
+      - type: surge
         name: "Starting torque"
         icon: "mdi:flash"
 
@@ -217,10 +217,12 @@ Each `flags` entry is a bare type name **or** a map with `name`/`icon` overrides
 | `photo_close` | Close after photo |
 | `always_close` | Always close |
 | `standby` | Standby |
-| `peak` | Peak |
+| `surge` | Surge |
 | `pre_flash` | Pre-flashing |
 | `disable_internal_radio` | Disable internal radio |
 | `slave` | Slave mode |
+| `automation_lock` | Automation lock |
+| `button_lock` | Button lock |
 <!-- END SWITCH_TYPES -->
 
 ```yaml
