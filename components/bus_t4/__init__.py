@@ -35,7 +35,7 @@ _FLAG_ENUM = {k: v[0] for k, v in CONFIG_TYPES.items()}
 CONF_CONTROL_UNIT = "control_unit"
 CONF_COVER = "cover"
 CONF_FLAGS = "flags"
-CONF_VERSION = "version"
+CONF_DIAGNOSTICS = "diagnostics"
 CONF_FIRMWARE = "firmware"
 CONF_PRODUCT = "product"
 CONF_HARDWARE = "hardware"
@@ -81,8 +81,8 @@ def _flag(value):
     return FLAG_SCHEMA(value)
 
 
-def _version(value):
-    # `version: true` creates both sensors with default names; a map renames either.
+def _diagnostics(value):
+    # `diagnostics: true` creates the sensors with default names; a map renames them.
     if value is True:
         value = {}
     diag = cv.maybe_simple_value(
@@ -105,7 +105,7 @@ CONTROL_UNIT_SCHEMA = cv.Schema(
         cv.Optional(CONF_ADDRESS): cv.hex_uint16_t,  # control-unit address override
         cv.Optional(CONF_COVER): COVER_SCHEMA,
         cv.Optional(CONF_FLAGS, default=[]): cv.ensure_list(_flag),
-        cv.Optional(CONF_VERSION): _version,
+        cv.Optional(CONF_DIAGNOSTICS): _diagnostics,
     }
 )
 
@@ -164,8 +164,8 @@ async def to_code(config):
             cg.add(sw.set_target_address(cu_address))
         cg.add(sw.set_param(fc[CONF_TYPE]))
 
-    if CONF_VERSION in cu:
-        v = cu[CONF_VERSION]
+    if CONF_DIAGNOSTICS in cu:
+        v = cu[CONF_DIAGNOSTICS]
         cg.add(var.set_firmware_sensor(await text_sensor.new_text_sensor(v[CONF_FIRMWARE])))
         cg.add(var.set_product_sensor(await text_sensor.new_text_sensor(v[CONF_PRODUCT])))
         cg.add(var.set_hardware_sensor(await text_sensor.new_text_sensor(v[CONF_HARDWARE])))
