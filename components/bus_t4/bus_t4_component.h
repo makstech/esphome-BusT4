@@ -83,7 +83,17 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   // (each ignores it if its address was pinned via config).
   void set_controller_address(T4Source addr);
 
+  bool discovery_ready() const { return discovered_; }
+  const std::string &product() const { return product_; }
+  const std::string &manufacturer() const { return manufacturer_; }
+  const std::string &firmware() const { return firmware_; }
+  T4Source get_controller_address() const { return controller_address_; }
+  T4Source get_oxi_address() const { return oxi_address_; }
+  bool has_oxi() const { return has_oxi_; }
+
  private:
+  void discover_();
+  std::string fetch_string_(T4Source to, uint8_t info_cmd);
   void rxTask();
   void txTask();
   static void rxTaskThunk(void *self) { static_cast<BusT4Component *>(self)->rxTask(); }
@@ -114,6 +124,15 @@ class BusT4Component final : public Component, public uart::UARTDevice {
 
   text_sensor::TextSensor *firmware_sensor_{nullptr};
   text_sensor::TextSensor *product_sensor_{nullptr};
+
+  bool discovered_{false};
+  uint32_t last_discover_{0};
+  T4Source controller_address_{0x00, 0x03};
+  T4Source oxi_address_{0x00, 0x00};
+  bool has_oxi_{false};
+  std::string manufacturer_;
+  std::string product_;
+  std::string firmware_;
 
   // Cached UART port for direct baud rate register writes during break signal.
   uart_port_t uart_num_ = UART_NUM_MAX;

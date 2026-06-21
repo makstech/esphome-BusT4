@@ -3,6 +3,7 @@
 
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
+#include "esphome/core/hal.h"
 
 #include "t4_packet.h"
 
@@ -54,6 +55,8 @@ void BusT4Component::setup() {
   // Cache UART port number for direct baud rate changes during break signal.
   auto *idf_uart = static_cast<uart::IDFUARTComponent *>(parent_);
   uart_num_ = static_cast<uart_port_t>(idf_uart->get_hw_serial_number());
+
+  this->discover_();
 }
 
 void BusT4Component::loop() {
@@ -76,9 +79,92 @@ void BusT4Component::set_controller_address(T4Source addr) {
     device->on_controller_resolved(addr);
 }
 
+std::string BusT4Component::fetch_string_(T4Source to, uint8_t info_cmd) {
+  uint8_t msg[5] = {FOR_ALL, info_cmd, REQ_GET, 0x00, 0x00};
+  T4Packet reply;
+  if (!this->dmp_request(to, msg, sizeof(msg), &reply, 400))
+    return "";
+  if (reply.size < 14)  // 7 header + 5 msg header + >=1 char + CRC
+    return "";
+  size_t len = reply.size - 13;  // data[12]..end, minus trailing CRC
+  std::string s(reinterpret_cast<const char *>(&reply.data[12]), len);
+  size_t nul = s.find('\0');
+  if (nul != std::string::npos)
+    s.resize(nul);
+  return s;
+}
+
+void BusT4Component::discover_() {
+  T4Source broadcast{0xFF, 0xFF};
+  uint8_t who[5] = {FOR_ALL, INF_WHO, REQ_GET, 0x00, 0x00};
+
+  bool found = false;
+  TickType_t give_up = xTaskGetTickCount() + pdMS_TO_TICKS(3000);
+  while (!found && xTaskGetTickCount() < give_up) {
+    T4Packet req(broadcast, address_, DMP, who, sizeof(who));
+    if (!this->write(&req, pdMS_TO_TICKS(200))) {
+      vTaskDelay(pdMS_TO_TICKS(100));
+      continue;
+    }
+    TickType_t window = xTaskGetTickCount() + pdMS_TO_TICKS(400);
+    while (xTaskGetTickCount() < window) {
+      T4Packet pkt;
+      if (!this->read(&pkt, pdMS_TO_TICKS(20)))
+        continue;
+      if (pkt.header.from == address_)
+        continue;
+      if (pkt.header.protocol != DMP || pkt.message.command != INF_WHO) {
+        this->dispatch_packet_(pkt);
+        continue;
+      }
+      uint8_t type = pkt.message.dmp.data[0];  // device type byte
+      if (type == CONTROLLER) {
+        controller_address_ = pkt.header.from;
+        found = true;
+      } else if (type == RADIO) {
+        oxi_address_ = pkt.header.from;
+        has_oxi_ = true;
+      }
+    }
+  }
+
+  if (found) {
+    ESP_LOGI(TAG, "Controller at 0x%02X.%02X%s", controller_address_.address, controller_address_.endpoint,
+             has_oxi_ ? " (OXI present)" : "");
+  } else {
+    ESP_LOGW(TAG, "Controller not found; using default 0x%02X.%02X", controller_address_.address,
+             controller_address_.endpoint);
+  }
+  this->set_controller_address(controller_address_);
+
+  if (!found)
+    return;
+
+  manufacturer_ = fetch_string_(controller_address_, INF_MAN);
+  product_ = fetch_string_(controller_address_, INF_PRD);
+  firmware_ = fetch_string_(controller_address_, INF_FRM);
+  if (!product_.empty()) {
+    ESP_LOGI(TAG, "Product: %s", product_.c_str());
+    this->publish_product(product_);
+  }
+  if (!firmware_.empty()) {
+    ESP_LOGI(TAG, "Firmware: %s (manufacturer: %s)", firmware_.c_str(), manufacturer_.c_str());
+    this->publish_firmware(firmware_);
+  }
+  discovered_ = true;
+}
+
 void BusT4Component::dump_config() {
   ESP_LOGCONFIG(TAG, "BusT4:");
   ESP_LOGCONFIG(TAG, "  Address: 0x%02X%02X", address_.address, address_.endpoint);
+  if (discovered_) {
+    ESP_LOGCONFIG(TAG, "  Controller: 0x%02X.%02X %s %s", controller_address_.address,
+                  controller_address_.endpoint, product_.c_str(), firmware_.c_str());
+    if (has_oxi_)
+      ESP_LOGCONFIG(TAG, "  OXI: 0x%02X.%02X", oxi_address_.address, oxi_address_.endpoint);
+  } else {
+    ESP_LOGCONFIG(TAG, "  Controller: not discovered");
+  }
 }
 
 void BusT4Component::rxTask() {
