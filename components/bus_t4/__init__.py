@@ -1,5 +1,5 @@
 import esphome.codegen as cg
-from esphome.components import cover, number, select, switch, text_sensor, uart
+from esphome.components import cover, number, select, sensor, switch, text_sensor, uart
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ADDRESS,
@@ -14,7 +14,7 @@ from esphome.const import (
 )
 
 DEPENDENCIES = ["uart"]
-AUTO_LOAD = ["cover", "switch", "text_sensor", "number", "select"]
+AUTO_LOAD = ["cover", "switch", "text_sensor", "number", "select", "sensor"]
 
 bus_t4_ns = cg.esphome_ns.namespace("bus_t4")
 BusT4Component = bus_t4_ns.class_("BusT4Component", cg.Component, uart.UARTDevice)
@@ -22,6 +22,7 @@ BusT4Cover = bus_t4_ns.class_("BusT4Cover", cover.Cover, cg.Component)
 BusT4Switch = bus_t4_ns.class_("BusT4Switch", switch.Switch, cg.Component)
 BusT4Number = bus_t4_ns.class_("BusT4Number", number.Number, cg.Component)
 BusT4Select = bus_t4_ns.class_("BusT4Select", select.Select, cg.Component)
+BusT4Sensor = bus_t4_ns.class_("BusT4Sensor", sensor.Sensor, cg.PollingComponent)
 
 CONF_BUS_T4_ID = "bus_t4_id"
 
@@ -38,16 +39,24 @@ CONFIG_TYPES = {
 }
 _FLAG_ENUM = {k: v[0] for k, v in CONFIG_TYPES.items()}
 
-# Numeric params: YAML type -> (param byte, min, max, step, unit, default name, icon).
+# Numeric params: YAML type -> (param byte, min, max, step, unit, default name, icon, width).
 # Ranges/units come from the controller's command-info (verified live on RBS400).
 NUMBER_TYPES = {
-    "pause_time": (0x81, 0, 240, 1, "s", "Auto-close pause time", "mdi:timer-sand"),
-    "speed_opening": (0x42, 25, 100, 1, "%", "Opening speed", "mdi:speedometer"),
-    "speed_closing": (0x43, 25, 100, 1, "%", "Closing speed", "mdi:speedometer-medium"),
-    "force_opening": (0x4A, 0, 100, 1, "%", "Opening force", "mdi:arm-flex"),
-    "force_closing": (0x4B, 0, 100, 1, "%", "Closing force", "mdi:arm-flex-outline"),
+    "pause_time": (0x81, 0, 240, 1, "s", "Auto-close pause time", "mdi:timer-sand", 1),
+    "speed_opening": (0x42, 25, 100, 1, "%", "Opening speed", "mdi:speedometer", 1),
+    "speed_closing": (0x43, 25, 100, 1, "%", "Closing speed", "mdi:speedometer-medium", 1),
+    "force_opening": (0x4A, 0, 100, 1, "%", "Opening force", "mdi:arm-flex", 1),
+    "force_closing": (0x4B, 0, 100, 1, "%", "Closing force", "mdi:arm-flex-outline", 1),
+    "maintenance_threshold": (0xB1, 100, 20000, 100, "", "Maintenance threshold", "mdi:wrench-clock", 4),
 }
 _NUMBER_ENUM = {k: v[0] for k, v in NUMBER_TYPES.items()}
+
+# Read-only numeric params: YAML type -> (param byte, default name, default icon, width).
+SENSOR_TYPES = {
+    "maintenance_count": (0xB2, "Maintenance counter", "mdi:counter", 4),
+    "total_maneuvers": (0xB3, "Total maneuvers", "mdi:counter", 4),
+}
+_SENSOR_ENUM = {k: v[0] for k, v in SENSOR_TYPES.items()}
 
 # Output-function labels from the manual's output configuration table, raw -> label.
 _OUTPUT_FUNCTIONS = {
@@ -114,6 +123,7 @@ CONF_COVER = "cover"
 CONF_FLAGS = "flags"
 CONF_NUMBERS = "numbers"
 CONF_SELECTS = "selects"
+CONF_SENSORS = "sensors"
 CONF_DIAGNOSTICS = "diagnostics"
 CONF_FIRMWARE = "firmware"
 CONF_PRODUCT = "product"
@@ -202,6 +212,31 @@ def _select(value):
     return SELECT_SCHEMA(value)
 
 
+SENSOR_SCHEMA = (
+    sensor.sensor_schema(
+        BusT4Sensor,
+        accuracy_decimals=0,
+        state_class="total_increasing",
+        entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+    )
+    .extend(cv.polling_component_schema("60s"))
+    .extend({cv.Required(CONF_TYPE): cv.enum(_SENSOR_ENUM, lower=True)})
+)
+
+
+def _sensor(value):
+    # Bare type ("total_maneuvers") or a map; inject the default name + icon from
+    # SENSOR_TYPES before validating (sensor_schema requires id or name).
+    if not isinstance(value, dict):
+        value = {CONF_TYPE: value}
+    key = str(value.get(CONF_TYPE, "")).lower()
+    if key in SENSOR_TYPES:
+        spec = SENSOR_TYPES[key]
+        value.setdefault(CONF_NAME, spec[1])
+        value.setdefault(CONF_ICON, spec[2])
+    return SENSOR_SCHEMA(value)
+
+
 def _diagnostics(value):
     # `diagnostics: true` creates the sensors with default names; a map renames them.
     if value is True:
@@ -228,6 +263,7 @@ CONTROL_UNIT_SCHEMA = cv.Schema(
         cv.Optional(CONF_FLAGS, default=[]): cv.ensure_list(_flag),
         cv.Optional(CONF_NUMBERS, default=[]): cv.ensure_list(_number),
         cv.Optional(CONF_SELECTS, default=[]): cv.ensure_list(_select),
+        cv.Optional(CONF_SENSORS, default=[]): cv.ensure_list(_sensor),
         cv.Optional(CONF_DIAGNOSTICS): _diagnostics,
     }
 )
@@ -289,13 +325,24 @@ async def to_code(config):
 
     for nc in cu[CONF_NUMBERS]:
         # cv.enum keeps the type name; look up its spec, then pass the byte to set_param.
-        byte, nmin, nmax, nstep, _unit, _name, _icon = NUMBER_TYPES[str(nc[CONF_TYPE])]
+        byte, nmin, nmax, nstep, _unit, _name, _icon, width = NUMBER_TYPES[str(nc[CONF_TYPE])]
         num = await number.new_number(nc, min_value=nmin, max_value=nmax, step=nstep)
         await cg.register_component(num, nc)
         cg.add(num.set_parent(var))
         if cu_address is not None:
             cg.add(num.set_target_address(cu_address))
         cg.add(num.set_param(byte))
+        cg.add(num.set_width(width))
+
+    for nc in cu[CONF_SENSORS]:
+        byte, _name, _icon, width = SENSOR_TYPES[str(nc[CONF_TYPE])]
+        sen = await sensor.new_sensor(nc)
+        await cg.register_component(sen, nc)
+        cg.add(sen.set_parent(var))
+        if cu_address is not None:
+            cg.add(sen.set_target_address(cu_address))
+        cg.add(sen.set_param(byte))
+        cg.add(sen.set_width(width))
 
     for sc in cu[CONF_SELECTS]:
         byte, _name, _icon, opts = SELECT_TYPES[str(sc[CONF_TYPE])]

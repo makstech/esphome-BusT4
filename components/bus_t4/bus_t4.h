@@ -40,6 +40,9 @@ class BusT4Device {
   // Accepts uint8_t to allow raw parameter values beyond the T4InfoCommand enum
   void send_config_set(uint8_t param, uint8_t value);
 
+  // Multi-byte SET: value sent big-endian over `width` bytes (1-4).
+  void send_config_set(uint8_t param, uint32_t value, uint8_t width);
+
   // Called by BusT4Component when a packet is received
   virtual void on_packet(const T4Packet &packet) {}
 
@@ -73,3 +76,4 @@ class BusT4Device {
 #include "switch.h"
 #include "number.h"
 #include "select.h"
+#include "sensor.h"

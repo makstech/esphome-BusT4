@@ -24,4 +24,11 @@ void BusT4Device::send_config_set(uint8_t param, uint8_t value) {
   parent_->dmp_send(target_address_, message, sizeof(message));
 }
 
+void BusT4Device::send_config_set(uint8_t param, uint32_t value, uint8_t width) {
+  uint8_t message[5 + 4] = { FOR_CU, param, REQ_SET, 0x00, width };
+  for (uint8_t i = 0; i < width; i++)
+    message[5 + i] = (value >> (8 * (width - 1 - i))) & 0xFF;
+  parent_->dmp_send(target_address_, message, 5 + width);
+}
+
 } // namespace esphome::bus_t4

@@ -16,12 +16,14 @@ class BusT4Number : public number::Number, public BusT4Device, public Component 
   void on_packet(const T4Packet &packet) override;
 
   void set_param(uint8_t param) { this->param_ = param; }
+  void set_width(uint8_t width) { this->width_ = width; }
 
  protected:
   void control(float value) override;
 
   uint8_t param_{0};
-  float pending_value_{0};
+  uint8_t width_{1};
+  uint32_t pending_value_{0};
   bool has_pending_{false};
 };
 

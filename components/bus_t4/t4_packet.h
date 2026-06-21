@@ -95,6 +95,11 @@ enum T4InfoCommand : uint8_t {
   // Force parameters (numeric, 0-100%)
   CFG_OPEN_FORCE = 0x4A,  // Opening force
   CFG_CLOSE_FORCE = 0x4B, // Closing force
+
+  // Maintenance parameters (numeric, 4-byte)
+  CFG_MAINT_THRESHOLD = 0xB1,  // Manoeuvres before maintenance request
+  CFG_MAINT_COUNT = 0xB2,      // Manoeuvres since last maintenance
+  CFG_TOTAL_MANEUVERS = 0xB3,  // Total manoeuvres counter
 };
 
 // Request types (byte 11)
@@ -207,6 +212,14 @@ struct T4Packet {
     data[size - 1] = checksum(sizeof(header), messageSize);
   }
 };
+
+// Read a big-endian unsigned value of `width` bytes from the payload at `off`.
+inline uint32_t t4_read_be(const T4Packet &p, uint8_t off, uint8_t width) {
+  uint32_t v = 0;
+  for (uint8_t i = 0; i < width; i++)
+    v = (v << 8) | p.data[off + i];
+  return v;
+}
 
 // DEP command packet structure
 enum T4CommandPacket : uint8_t {
