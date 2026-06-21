@@ -138,17 +138,6 @@ void BusT4Cover::dump_config() {
     ESP_LOGCONFIG(TAG, "  Motor type: %s", type_str);
     ESP_LOGCONFIG(TAG, "  Position range: %d - %d", pos_min_, pos_max_);
 
-    // Device identification
-    if (!manufacturer_.empty()) {
-      ESP_LOGCONFIG(TAG, "  Manufacturer: %s", manufacturer_.c_str());
-    }
-    if (!product_name_.empty()) {
-      ESP_LOGCONFIG(TAG, "  Product: %s", product_name_.c_str());
-    }
-    if (!firmware_version_.empty()) {
-      ESP_LOGCONFIG(TAG, "  Firmware: %s", firmware_version_.c_str());
-    }
-
     // Device-specific modes
     if (is_walky_) {
       ESP_LOGCONFIG(TAG, "  Mode: Walky (1-byte position)");
@@ -479,38 +468,6 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       break;
     }
 
-    case INF_WHO: {
-      // Device discovery response
-      // First byte of payload is the device type that responded
-      uint8_t responder_type = packet.data[DATA_OFFSET];
-      ESP_LOGI(TAG, "INF_WHO response: device_type=0x%02X from 0x%02X.%02X",
-               responder_type, packet.header.from.address, packet.header.from.endpoint);
-
-      // Identify by the reported device type (matches pruwait/gashtaan).
-      if (responder_type == CONTROLLER) {
-        // Primary motor controller found
-        ESP_LOGI(TAG, "Found motor controller at 0x%02X.%02X",
-                 packet.header.from.address, packet.header.from.endpoint);
-        // Share the resolved address with all devices (each ignores it if pinned).
-        parent_->set_controller_address(packet.header.from);
-        if (init_step_ == 0) {
-          init_step_ = 1;  // Move to next init step
-          discovery_attempts_ = 0;  // Reset backoff on success
-        }
-      } else if (responder_type == RADIO) {
-        // OXI receiver - track for info but don't use as motor controller target
-        // This matches original behavior: OXI is only for receiving remote control info
-        ESP_LOGI(TAG, "Found OXI/RADIO device at 0x%02X.%02X (not using as target)",
-                 packet.header.from.address, packet.header.from.endpoint);
-        oxi_address_ = packet.header.from;
-        has_oxi_ = true;
-
-        // Queue OXI device info queries (async, won't block init)
-        init_oxi_device();
-        // Don't advance init_step_ - keep waiting for CONTROLLER (0x04)
-      }
-      break;
-    }
 
     case INF_STATUS: {
       // Gate status response
@@ -655,81 +612,30 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       break;
     }
 
-    case INF_MAN: {
-      // Manufacturer name response (null-terminated string)
-      size_t str_len = packet.size - DATA_OFFSET - 1;  // -1 for checksum
-      if (str_len > 0 && str_len < 64) {
-        manufacturer_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
-        // Remove null terminators and trailing garbage
-        size_t null_pos = manufacturer_.find('\0');
-        if (null_pos != std::string::npos) {
-          manufacturer_.resize(null_pos);
-        }
-        ESP_LOGI(TAG, "Manufacturer: %s", manufacturer_.c_str());
-      }
-      break;
-    }
-
+    // Controller identity (manufacturer/product/firmware) is discovered by the
+    // component now; only OXI identity replies are handled here.
     case INF_PRD: {
-      // Product name response (null-terminated string)
       size_t str_len = packet.size - DATA_OFFSET - 1;  // -1 for checksum
-      if (str_len > 0 && str_len < 64) {
-        // Check if this is from OXI device
-        if (has_oxi_ && packet.header.from == oxi_address_) {
-          oxi_product_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
-          size_t null_pos = oxi_product_.find('\0');
-          if (null_pos != std::string::npos) {
-            oxi_product_.resize(null_pos);
-          }
-          ESP_LOGI(TAG, "OXI Product: %s", oxi_product_.c_str());
-        } else {
-          // Product response from motor controller
-          product_name_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
-          // Remove null terminators and trailing garbage
-          size_t null_pos = product_name_.find('\0');
-          if (null_pos != std::string::npos) {
-            product_name_.resize(null_pos);
-          }
-          ESP_LOGI(TAG, "Product: %s", product_name_.c_str());
-          parent_->publish_product(product_name_);
-
-          // Detect device-specific modes based on product name prefix
-          if (product_name_.find(PRODUCT_WALKY) == 0) {
-            is_walky_ = true;
-            ESP_LOGI(TAG, "Detected Walky device - using 1-byte position mode");
-          }
-          if (product_name_.find(PRODUCT_ROBUS) == 0) {
-            is_robus_ = true;
-            ESP_LOGI(TAG, "Detected Robus device - position queries disabled during movement");
-          }
+      if (str_len > 0 && str_len < 64 && has_oxi_ && packet.header.from == oxi_address_) {
+        oxi_product_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
+        size_t null_pos = oxi_product_.find('\0');
+        if (null_pos != std::string::npos) {
+          oxi_product_.resize(null_pos);
         }
+        ESP_LOGI(TAG, "OXI Product: %s", oxi_product_.c_str());
       }
       break;
     }
 
     case INF_FRM: {
-      // Firmware version response (null-terminated string)
       size_t str_len = packet.size - DATA_OFFSET - 1;  // -1 for checksum
-      if (str_len > 0 && str_len < 64) {
-        // Check if this is from OXI device
-        if (has_oxi_ && packet.header.from == oxi_address_) {
-          oxi_firmware_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
-          size_t null_pos = oxi_firmware_.find('\0');
-          if (null_pos != std::string::npos) {
-            oxi_firmware_.resize(null_pos);
-          }
-          ESP_LOGI(TAG, "OXI Firmware: %s", oxi_firmware_.c_str());
-        } else {
-          // Firmware response from motor controller
-          firmware_version_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
-          // Remove null terminators and trailing garbage
-          size_t null_pos = firmware_version_.find('\0');
-          if (null_pos != std::string::npos) {
-            firmware_version_.resize(null_pos);
-          }
-          ESP_LOGI(TAG, "Firmware: %s", firmware_version_.c_str());
-          parent_->publish_firmware(firmware_version_);
+      if (str_len > 0 && str_len < 64 && has_oxi_ && packet.header.from == oxi_address_) {
+        oxi_firmware_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
+        size_t null_pos = oxi_firmware_.find('\0');
+        if (null_pos != std::string::npos) {
+          oxi_firmware_.resize(null_pos);
         }
+        ESP_LOGI(TAG, "OXI Firmware: %s", oxi_firmware_.c_str());
       }
       break;
     }
@@ -790,77 +696,55 @@ void BusT4Cover::init_device() {
   // Each call advances one step to avoid flooding the bus
 
   switch (init_step_) {
-    case 0: {
-      // Step 0: Discover devices on the bus
-      discovery_attempts_++;
-      ESP_LOGI(TAG, "Initializing device - discovering... (attempt %d)", discovery_attempts_);
-      T4Source broadcast{0xFF, 0xFF};
-      uint8_t who_msg[5] = { FOR_ALL, INF_WHO, REQ_GET, 0x00, 0x00 };
-      T4Packet who_packet(broadcast, parent_->get_address(), DMP, who_msg, sizeof(who_msg));
-      write(&who_packet, 0);
+    case 0:
+      // Wait for the component's bus discovery, then take the controller's
+      // product (drives device-specific behavior) and OXI presence from it.
+      if (!parent_->discovery_ready())
+        break;
+      if (parent_->product().find(PRODUCT_WALKY) == 0) {
+        is_walky_ = true;
+        ESP_LOGI(TAG, "Detected Walky device - using 1-byte position mode");
+      }
+      if (parent_->product().find(PRODUCT_ROBUS) == 0) {
+        is_robus_ = true;
+        ESP_LOGI(TAG, "Detected Robus device - position queries disabled during movement");
+      }
+      has_oxi_ = parent_->has_oxi();
+      oxi_address_ = parent_->get_oxi_address();
+      if (has_oxi_)
+        init_oxi_device();
+      init_step_ = 1;
       break;
-    }
 
     case 1:
-      // Step 1: Request motor type
-      ESP_LOGD(TAG, "Init step 1: requesting motor type");
       send_info_request(FOR_CU, INF_TYPE);
       init_step_ = 2;
       break;
 
     case 2:
-      // Step 2: Request product name (for device-specific behavior detection)
-      ESP_LOGD(TAG, "Init step 2: requesting product name");
-      send_info_request(FOR_ALL, INF_PRD);
+      send_info_request(FOR_CU, INF_POS_MAX);
+      send_info_request(FOR_CU, INF_POS_MIN);
       init_step_ = 3;
       break;
 
     case 3:
-      // Step 3: Request manufacturer
-      ESP_LOGD(TAG, "Init step 3: requesting manufacturer");
-      send_info_request(FOR_ALL, INF_MAN);
+      send_info_request(FOR_CU, INF_MAX_OPN);
       init_step_ = 4;
       break;
 
     case 4:
-      // Step 4: Request firmware version
-      ESP_LOGD(TAG, "Init step 4: requesting firmware version");
-      send_info_request(FOR_ALL, INF_FRM);
+      send_info_request(FOR_CU, INF_STATUS);
       init_step_ = 5;
       break;
 
     case 5:
-      // Step 5: Request open/close positions
-      ESP_LOGD(TAG, "Init step 5: requesting position limits");
-      send_info_request(FOR_CU, INF_POS_MAX);
-      send_info_request(FOR_CU, INF_POS_MIN);
-      init_step_ = 6;
-      break;
-
-    case 6:
-      // Step 6: Request max encoder position
-      ESP_LOGD(TAG, "Init step 6: requesting max encoder position");
-      send_info_request(FOR_CU, INF_MAX_OPN);
-      init_step_ = 7;
-      break;
-
-    case 7:
-      // Step 7: Request status
-      ESP_LOGD(TAG, "Init step 7: requesting status");
-      send_info_request(FOR_CU, INF_STATUS);
-      init_step_ = 8;
-      break;
-
-    case 8:
-      // Step 8: Initialization complete
       ESP_LOGI(TAG, "Device initialization complete");
       init_ok_ = true;
-      init_step_ = 9;
+      init_step_ = 6;
       publish_state_if_changed();
       break;
 
     default:
-      // Already initialized
       break;
   }
 }

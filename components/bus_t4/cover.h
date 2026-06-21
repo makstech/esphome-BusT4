@@ -83,10 +83,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   uint8_t discovery_attempts_{0};  // Discovery retry counter for exponential backoff
   uint32_t get_discovery_interval() const;  // Get current discovery retry interval
 
-  // Device identification - for device-specific handling
-  std::string product_name_;           // Product name (e.g., "WLA1", "ROBUSHSR10")
-  std::string manufacturer_;           // Manufacturer name
-  std::string firmware_version_;       // Firmware version string
+  // Device-specific handling, derived from the controller product string.
   bool is_walky_{false};               // Walky gates: 1-byte position values
   bool is_robus_{false};               // Robus gates: no position query during movement
 
