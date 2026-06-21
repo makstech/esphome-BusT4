@@ -1,22 +1,25 @@
 import esphome.codegen as cg
-from esphome.components import cover, switch, text_sensor, uart
+from esphome.components import cover, number, switch, text_sensor, uart
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ADDRESS,
     CONF_ID,
+    CONF_MODE,
     CONF_NAME,
     CONF_TYPE,
+    CONF_UNIT_OF_MEASUREMENT,
     ENTITY_CATEGORY_CONFIG,
     ENTITY_CATEGORY_DIAGNOSTIC,
 )
 
 DEPENDENCIES = ["uart"]
-AUTO_LOAD = ["cover", "switch", "text_sensor"]
+AUTO_LOAD = ["cover", "switch", "text_sensor", "number"]
 
 bus_t4_ns = cg.esphome_ns.namespace("bus_t4")
 BusT4Component = bus_t4_ns.class_("BusT4Component", cg.Component, uart.UARTDevice)
 BusT4Cover = bus_t4_ns.class_("BusT4Cover", cover.Cover, cg.Component)
 BusT4Switch = bus_t4_ns.class_("BusT4Switch", switch.Switch, cg.Component)
+BusT4Number = bus_t4_ns.class_("BusT4Number", number.Number, cg.Component)
 
 CONF_BUS_T4_ID = "bus_t4_id"
 
@@ -32,9 +35,17 @@ CONFIG_TYPES = {
 }
 _FLAG_ENUM = {k: v[0] for k, v in CONFIG_TYPES.items()}
 
+# Numeric params: YAML type -> (param byte, min, max, step, unit, default name, icon).
+# Ranges/units come from the controller's command-info (verified live on RBS400).
+NUMBER_TYPES = {
+    "pause_time": (0x81, 0, 240, 1, "s", "Auto-close pause time", "mdi:timer-sand"),
+}
+_NUMBER_ENUM = {k: v[0] for k, v in NUMBER_TYPES.items()}
+
 CONF_CONTROL_UNIT = "control_unit"
 CONF_COVER = "cover"
 CONF_FLAGS = "flags"
+CONF_NUMBERS = "numbers"
 CONF_DIAGNOSTICS = "diagnostics"
 CONF_FIRMWARE = "firmware"
 CONF_PRODUCT = "product"
@@ -81,6 +92,28 @@ def _flag(value):
     return FLAG_SCHEMA(value)
 
 
+NUMBER_SCHEMA = (
+    number.number_schema(BusT4Number, entity_category=ENTITY_CATEGORY_CONFIG)
+    .extend(cv.COMPONENT_SCHEMA)
+    .extend({cv.Required(CONF_TYPE): cv.enum(_NUMBER_ENUM, lower=True)})
+)
+
+
+def _number(value):
+    # Bare type ("pause_time") or a map; inject the default name + unit from
+    # NUMBER_TYPES before validating (number_schema requires id or name).
+    if not isinstance(value, dict):
+        value = {CONF_TYPE: value}
+    key = str(value.get(CONF_TYPE, "")).lower()
+    if key in NUMBER_TYPES:
+        spec = NUMBER_TYPES[key]
+        value.setdefault(CONF_NAME, spec[5])
+        value.setdefault(CONF_UNIT_OF_MEASUREMENT, spec[4])
+        value.setdefault(CONF_ICON, spec[6])
+        value.setdefault(CONF_MODE, "box")
+    return NUMBER_SCHEMA(value)
+
+
 def _diagnostics(value):
     # `diagnostics: true` creates the sensors with default names; a map renames them.
     if value is True:
@@ -105,6 +138,7 @@ CONTROL_UNIT_SCHEMA = cv.Schema(
         cv.Optional(CONF_ADDRESS): cv.hex_uint16_t,  # control-unit address override
         cv.Optional(CONF_COVER): COVER_SCHEMA,
         cv.Optional(CONF_FLAGS, default=[]): cv.ensure_list(_flag),
+        cv.Optional(CONF_NUMBERS, default=[]): cv.ensure_list(_number),
         cv.Optional(CONF_DIAGNOSTICS): _diagnostics,
     }
 )
@@ -163,6 +197,16 @@ async def to_code(config):
         if cu_address is not None:
             cg.add(sw.set_target_address(cu_address))
         cg.add(sw.set_param(fc[CONF_TYPE]))
+
+    for nc in cu[CONF_NUMBERS]:
+        # cv.enum keeps the type name; look up its spec, then pass the byte to set_param.
+        byte, nmin, nmax, nstep, _unit, _name, _icon = NUMBER_TYPES[str(nc[CONF_TYPE])]
+        num = await number.new_number(nc, min_value=nmin, max_value=nmax, step=nstep)
+        await cg.register_component(num, nc)
+        cg.add(num.set_parent(var))
+        if cu_address is not None:
+            cg.add(num.set_target_address(cu_address))
+        cg.add(num.set_param(byte))
 
     if CONF_DIAGNOSTICS in cu:
         v = cu[CONF_DIAGNOSTICS]

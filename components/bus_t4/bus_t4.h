@@ -71,3 +71,4 @@ class BusT4Device {
 // the entities' back-include of this file resolves cleanly).
 #include "cover.h"
 #include "switch.h"
+#include "number.h"
