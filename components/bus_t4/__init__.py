@@ -49,10 +49,41 @@ NUMBER_TYPES = {
 }
 _NUMBER_ENUM = {k: v[0] for k, v in NUMBER_TYPES.items()}
 
+# Output-function labels from the manual's output configuration table, raw -> label.
+_OUTPUT_FUNCTIONS = {
+    0: "None",
+    1: "SCA (gate-open indicator)",
+    2: "Gate open",
+    3: "Gate closed",
+    4: "Maintenance",
+    5: "Warning light",
+    6: "Courtesy light",
+    7: "Electric lock 1",
+    9: "Electric locking device 1",
+    11: "Suction cup 1",
+    13: "Red traffic light",
+    14: "Green traffic light",
+    15: "Radio channel 1",
+    16: "Radio channel 2",
+    17: "Radio channel 3",
+    18: "Radio channel 4",
+    19: "Warning light 1",
+    23: "Warning light 24V",
+    26: "One-way traffic light",
+    30: "Door status",
+    35: "Presence",
+    37: "PhotoTest",
+}
+# Outputs 1-2 support 22 functions; outputs 3-6 support 18.
+_OUT_FULL = [0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 13, 14, 15, 16, 17, 18, 19, 23, 26, 30, 35, 37]
+_OUT_BASIC = [0, 1, 2, 3, 4, 6, 13, 14, 15, 16, 17, 18, 19, 23, 26, 30, 35, 37]
+
+
+def _out_opts(raws):
+    return [(r, _OUTPUT_FUNCTIONS[r]) for r in raws]
+
+
 # Enumerated params: YAML type -> (param byte, default name, default icon, [(raw, label), ...]).
-# The controller reports the valid raw values via command-info; labels are ours,
-# from the programming manual, indexed by raw value (verified live: step_by_step
-# 0x61 is an 8-option list reporting raw 1-8).
 SELECT_TYPES = {
     "step_by_step": (
         0x61,
@@ -69,6 +100,12 @@ SELECT_TYPES = {
             (8, "Semi-automatic"),
         ],
     ),
+    "output_1": (0x51, "Output 1 function", "mdi:electric-switch", _out_opts(_OUT_FULL)),
+    "output_2": (0x52, "Output 2 function", "mdi:electric-switch", _out_opts(_OUT_FULL)),
+    "output_3": (0x53, "Output 3 function", "mdi:electric-switch", _out_opts(_OUT_BASIC)),
+    "output_4": (0x54, "Output 4 function", "mdi:electric-switch", _out_opts(_OUT_BASIC)),
+    "output_5": (0x55, "Output 5 function", "mdi:electric-switch", _out_opts(_OUT_BASIC)),
+    "output_6": (0x56, "Output 6 function", "mdi:electric-switch", _out_opts(_OUT_BASIC)),
 }
 _SELECT_ENUM = {k: v[0] for k, v in SELECT_TYPES.items()}
 
