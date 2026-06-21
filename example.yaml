@@ -19,6 +19,27 @@ logger:
   baud_rate: 0  # Disable serial logging (UART is used for Bus-T4)
 
 api:
+  # Interactive bus debugging — call at runtime from Home Assistant
+  # (Developer Tools -> Actions) or `esphome` scripts, no reflash needed.
+  # Watch replies with: esphome logs example.yaml
+  actions:
+    # Send only the DMP message bytes; header, 55/size framing and both CRCs are
+    # added for you. Returns {"reply": "<hex>"} to the caller.
+    # Example (get control-unit IO state): message="04 D1 99 00 00"
+    - action: debug_request
+      variables:
+        message: string
+      then:
+        - api.respond:
+            data: !lambda 'root["reply"] = id(bus)->debug_request(message);'
+    # Send a byte-exact frame (you supply the whole frame incl. framing + CRCs).
+    # Returns {"reply": "<hex>"} to the caller (HA: call with "return response").
+    - action: debug_request_raw
+      variables:
+        frame: string
+      then:
+        - api.respond:
+            data: !lambda 'root["reply"] = id(bus)->debug_request_raw(frame);'
 
 ota:
   - platform: esphome
@@ -127,19 +148,4 @@ lock:
       - lambda: 'id(gate).send_cmd(CMD_BLOCK, IT4WIFI);'
     on_unlock:
       - lambda: 'id(gate).send_cmd(CMD_RELEASE, IT4WIFI);'
-
-# Raw hex command input for debugging/testing
-# Enter hex string like "55.0C.00.FF..." or "550C00FF..." in Home Assistant
-text:
-  - platform: template
-    name: "Raw Command"
-    id: raw_command
-    optimistic: true
-    mode: text
-    on_value:
-      then:
-        - lambda: |-
-            if (!x.empty()) {
-              id(gate).send_raw_cmd(x);
-            }
 

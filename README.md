@@ -298,30 +298,47 @@ number:
       - lambda: 'id(gate).send_config_set(0x88, (uint8_t)x);'
 ```
 
-### Raw Command for Debugging
+### Sending Commands for Debugging
 
-For debugging and testing, you can send raw hex commands directly to the bus using `send_raw_cmd()`. This accepts hex strings in formats like `"55.0C.00.FF..."` or `"550C00FF..."` (dots/spaces are automatically stripped).
+Two component methods let you push commands onto the bus at runtime (no reflash). Each sends, waits for the reply, and **returns it as a hex string** (or `"no reply"` on timeout, `""` on bad input); the reply is also logged (`[debug] RX: ...`):
 
-The easiest way to use this is with an ESPHome Text component:
+- `id(bus)->debug_request(message)` — a DMP request to the control unit; supply only the message bytes and the header, `55`/size framing and both checksums are added for you. Returns as soon as the reply with the matching command byte arrives.
+- `id(bus)->debug_request_raw(frame)` — sends a byte-exact frame (you supply the whole thing including framing and checksums) and returns on the first non-echo reply.
+
+These are thin hex wrappers over the component's send primitives: `dep_send()` / `dmp_send()` (fire-and-forget) and `dmp_request()` (waits for the reply) — the same primitives `send_cmd()` and the switch platform use.
+
+Both accept hex in any format (`"04 D1 99"`, `"04.D1.99"` or `"04D199"` — non-hex characters are stripped). They block the main loop only until the reply lands (typically ~150 ms), or until `timeout_ms` (default 500) on no reply.
+
+The cleanest way to call them at runtime is via Home Assistant actions. Wrap a send in `api.respond` to return the reply to the caller:
 
 ```yaml
-text:
-  - platform: template
-    name: "Raw Command"
-    id: raw_command
-    optimistic: true
-    mode: text
-    on_value:
+api:
+  actions:
+    # Each returns {"reply": "<hex>"} to the caller.
+    - action: debug_request
+      variables:
+        message: string
       then:
-        - lambda: |-
-            if (!x.empty()) {
-              id(gate).send_raw_cmd(x);
-            }
+        - api.respond:
+            data: !lambda 'root["reply"] = id(bus)->debug_request(message);'
+    - action: debug_request_raw
+      variables:
+        frame: string
+      then:
+        - api.respond:
+            data: !lambda 'root["reply"] = id(bus)->debug_request_raw(frame);'
 ```
 
-This creates a text input in Home Assistant where you can paste hex commands. The command is sent immediately when you submit the text.
+Call it from Developer Tools → Actions with "return response":
 
-> **Note**: The text component approach is recommended because ESPHome's API service string variables have [known issues](https://github.com/esphome/issues/issues/3564) with the ESP-IDF framework.
+```yaml
+action: esphome.gate_debug_request_raw
+data:
+  frame: "55.0D.00.03.00.81.08.06.8C.04.08.89.00.00.85.0D"
+# response -> {"reply": "00.81.00.03..."}
+```
+
+> **Note**: `api.respond` needs ESPHome 2025.12+; `supports_response` is auto-detected (`optional`) when the action returns data.
 
 ## How Position Tracking Works
 

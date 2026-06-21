@@ -4,6 +4,7 @@
 #include <freertos/queue.h>
 #include <freertos/event_groups.h>
 #include <functional>
+#include <string>
 #include <vector>
 #include "esphome/components/uart/uart.h"
 #include "t4_packet.h"
@@ -37,14 +38,23 @@ class BusT4Component final : public Component, public uart::UARTDevice {
     return xQueueSend(txQueue_, packet, xTicksToWait);
   }
 
-  // Synchronous request/response: sends a packet and blocks until a matching
-  // DMP response arrives (same command byte) or the timeout expires.
-  // Non-matching packets are dispatched to all registered devices normally.
-  // Returns true if a matching response was received.
-  bool request(T4Packet *req, T4Packet *rsp, uint32_t timeout_ms);
+  // --- Send primitives (used by devices via parent_, and by the debug helpers) ---
+  // Verb says whether a reply is expected: `send` fires and returns; `request` waits.
+  void dep_send(T4Source to, const uint8_t *msg, size_t len);  // DEP (execute-only, no reply)
+  void dmp_send(T4Source to, const uint8_t *msg, size_t len);  // DMP, async (reply via on_packet)
+  // DMP request: frame `msg` to `to`, send, and block up to timeout_ms for the
+  // matching reply (same command byte); non-matching packets are dispatched to
+  // devices normally. Returns true and fills `reply`. Don't call from a hot loop —
+  // it blocks; the cover's periodic polling uses async dmp_send instead.
+  bool dmp_request(T4Source to, const uint8_t *msg, size_t len, T4Packet *reply, uint32_t timeout_ms = 500);
 
-  // Send raw bytes directly to UART (for debugging/testing)
-  void write_raw(const uint8_t *data, size_t len);
+  // --- Interactive debugging (hex wrappers, callable from YAML lambdas / API actions) ---
+  // DMP request to the control unit from message bytes; returns the reply as a hex
+  // string (e.g. "00.81.00.03..."), or "no reply" on timeout / "" on bad input.
+  // e.g. debug_request("04 D1 99 00 00") reads IO state.
+  std::string debug_request(const std::string &message_hex, uint32_t timeout_ms = 500);
+  // Send byte-exact frame bytes (no framing/CRCs added — you supply the whole frame).
+  std::string debug_request_raw(const std::string &frame_hex, uint32_t timeout_ms = 500);
 
   void set_address(const uint16_t address) {
     address_.address = static_cast<uint8_t>(address >> 8);
@@ -68,6 +78,10 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   // Send a BusT4 break signal (~1ms low pulse) before each packet.
   // Temporarily lowers UART baud rate to produce the correct break duration.
   void send_break();
+
+  // Parse a hex string ("04 D1 99" or "04D199") into bytes. Returns empty on
+  // an odd digit count or no hex digits (callers treat empty as invalid input).
+  static std::vector<uint8_t> parse_hex_(const std::string &s);
 
   T4Source address_;
 

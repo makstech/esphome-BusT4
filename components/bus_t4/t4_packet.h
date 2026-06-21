@@ -187,7 +187,7 @@ struct T4Packet {
   }
 
   T4Packet() = default;
-  T4Packet(const T4Source to, const T4Source from, const T4Protocol protocol, uint8_t *messageData,
+  T4Packet(const T4Source to, const T4Source from, const T4Protocol protocol, const uint8_t *messageData,
            const uint8_t messageSize) {
     size = sizeof(header) + messageSize + 1;
 

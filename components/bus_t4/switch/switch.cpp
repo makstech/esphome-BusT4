@@ -10,12 +10,11 @@ static const char *const TAG = "bus_t4.switch";
 static constexpr uint8_t DATA_OFFSET = 12;
 
 void BusT4Switch::setup() {
-  // Build and send a GET request, block until the controller responds.
+  // Send a GET request and block until the controller responds.
   uint8_t message[5] = {FOR_CU, this->param_, REQ_GET, 0x00, 0x00};
-  T4Packet req(this->target_address_, this->parent_->get_address(), DMP, message, sizeof(message));
   T4Packet rsp;
 
-  if (this->parent_->request(&req, &rsp, 500)) {
+  if (this->parent_->dmp_request(this->target_address_, message, sizeof(message), &rsp, 500)) {
     if (rsp.message.dmp.status == ERR_NONE && rsp.size >= DATA_OFFSET + 2) {
       bool state = rsp.data[DATA_OFFSET] != 0x00;
       this->publish_state(state);

@@ -16,6 +16,9 @@ static const char *TAG = "bus_t4";
 // on a 19200 baud bus. Reference: pruwait/Nice_BusT4 nice-bust4.h
 static constexpr uint32_t T4_BAUD_BREAK = 9200;
 
+// Max message bytes per frame: T4Packet::data[63] less the 7-byte header and 1-byte CRC2.
+static constexpr size_t T4_MAX_MESSAGE = 55;
+
 void BusT4Component::setup() {
   rxQueue_ = xQueueCreate(32, sizeof(T4Packet));
   if (rxQueue_ == nullptr) {
@@ -189,41 +192,127 @@ void BusT4Component::txTask() {
   vTaskDelete(nullptr);
 }
 
-bool BusT4Component::request(T4Packet *req, T4Packet *rsp, uint32_t timeout_ms) {
-  if (!this->write(req, pdMS_TO_TICKS(timeout_ms)))
+std::vector<uint8_t> BusT4Component::parse_hex_(const std::string &s) {
+  // Accepts separators ("55.0D", "55 0D") and bare hex ("550D"); empty result
+  // signals invalid input (odd digit count or no hex) to callers.
+  std::vector<uint8_t> bytes;
+  int hi = -1;
+  for (char ch : s) {
+    uint8_t nib = parse_hex_char(ch);
+    if (nib == INVALID_HEX_CHAR)
+      continue;  // skip separators and other non-hex characters
+    if (hi < 0) {
+      hi = nib;
+    } else {
+      bytes.push_back(static_cast<uint8_t>((hi << 4) | nib));
+      hi = -1;
+    }
+  }
+  if (hi >= 0)
+    return {};  // dangling nibble — odd number of hex digits
+  return bytes;
+}
+
+void BusT4Component::dep_send(T4Source to, const uint8_t *msg, size_t len) {
+  if (len > T4_MAX_MESSAGE) {
+    ESP_LOGW(TAG, "dep_send: message too long (%u > %u)", static_cast<unsigned>(len), T4_MAX_MESSAGE);
+    return;
+  }
+  T4Packet pkt(to, address_, DEP, msg, static_cast<uint8_t>(len));
+  this->write(&pkt, 0);  // fire-and-forget: DEP is execute-only
+}
+
+void BusT4Component::dmp_send(T4Source to, const uint8_t *msg, size_t len) {
+  if (len > T4_MAX_MESSAGE) {
+    ESP_LOGW(TAG, "dmp_send: message too long (%u > %u)", static_cast<unsigned>(len), T4_MAX_MESSAGE);
+    return;
+  }
+  T4Packet pkt(to, address_, DMP, msg, static_cast<uint8_t>(len));
+  this->write(&pkt, 0);  // fire-and-forget: reply (if any) handled async in on_packet
+}
+
+bool BusT4Component::dmp_request(T4Source to, const uint8_t *msg, size_t len, T4Packet *reply,
+                                 uint32_t timeout_ms) {
+  if (len > T4_MAX_MESSAGE) {
+    ESP_LOGW(TAG, "dmp_request: message too long (%u > %u)", static_cast<unsigned>(len), T4_MAX_MESSAGE);
+    return false;
+  }
+  T4Packet req(to, address_, DMP, msg, static_cast<uint8_t>(len));
+  if (!this->write(&req, pdMS_TO_TICKS(timeout_ms)))
     return false;
 
-  uint8_t expected_cmd = req->message.command;
+  uint8_t expected_cmd = req.message.command;
   TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
-
   while (xTaskGetTickCount() < deadline) {
     T4Packet pkt;
-    if (!xQueueReceive(rxQueue_, &pkt, pdMS_TO_TICKS(10)))
+    if (!this->read(&pkt, pdMS_TO_TICKS(10)))
       continue;
-
-    // Skip TX echo
-    if (pkt.header.from == address_)
+    if (pkt.header.from == address_)  // skip TX echo
       continue;
-
-    // Match: DMP response with the same command byte
     if (pkt.header.protocol == DMP && pkt.message.command == expected_cmd) {
-      *rsp = pkt;
+      *reply = pkt;
       return true;
     }
-
-    // Not ours — dispatch normally
-    this->dispatch_packet_(pkt);
+    this->dispatch_packet_(pkt);  // not ours — dispatch normally
   }
-
   return false;
 }
 
-void BusT4Component::write_raw(const uint8_t *data, size_t len) {
-  // Send raw bytes directly to UART with break prefix
-  // Used for debugging/testing with user-provided hex commands
+std::string BusT4Component::debug_request(const std::string &message_hex, uint32_t timeout_ms) {
+  std::vector<uint8_t> msg = parse_hex_(message_hex);
+  if (msg.empty()) {
+    ESP_LOGW(TAG, "[debug] invalid hex message: '%s'", message_hex.c_str());
+    return "";
+  }
+  if (msg.size() > T4_MAX_MESSAGE) {
+    ESP_LOGW(TAG, "[debug] message too long: %u bytes (max %u)", static_cast<unsigned>(msg.size()),
+             T4_MAX_MESSAGE);
+    return "";
+  }
+
+  T4Source target{0x00, 0x03};  // motor control unit
+  ESP_LOGI(TAG, "[debug] TX dmp: %s", format_hex_pretty(msg).c_str());
+
+  // dmp_request blocks until the matching reply arrives (short stall) or timeout.
+  T4Packet rsp;
+  if (this->dmp_request(target, msg.data(), msg.size(), &rsp, timeout_ms)) {
+    std::string reply = format_hex_pretty(rsp.data, rsp.size);
+    ESP_LOGI(TAG, "[debug] RX: %s", reply.c_str());
+    return reply;
+  }
+  ESP_LOGI(TAG, "[debug] no reply within %ums", static_cast<unsigned>(timeout_ms));
+  return "no reply";
+}
+
+std::string BusT4Component::debug_request_raw(const std::string &frame_hex, uint32_t timeout_ms) {
+  std::vector<uint8_t> bytes = parse_hex_(frame_hex);
+  if (bytes.empty()) {
+    ESP_LOGW(TAG, "[debug] invalid hex frame: '%s'", frame_hex.c_str());
+    return "";
+  }
+  ESP_LOGI(TAG, "[debug] TX raw: %s", format_hex_pretty(bytes).c_str());
   send_break();
-  parent_->write_array(data, len);
+  parent_->write_array(bytes.data(), bytes.size());
   parent_->flush();
+
+  // Self-contained reply capture: byte-exact frames can't go through request()
+  // (which re-frames), so wait here for the first non-echo packet, then return it.
+  // Returns as soon as the reply lands (short stall), re-dispatching it so normal
+  // device handling keeps working.
+  TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
+  while (xTaskGetTickCount() < deadline) {
+    T4Packet pkt;
+    if (!this->read(&pkt, pdMS_TO_TICKS(10)))
+      continue;
+    if (pkt.header.from == address_)  // skip our own TX echo
+      continue;
+    std::string reply = format_hex_pretty(pkt.data, pkt.size);
+    ESP_LOGI(TAG, "[debug] RX: %s", reply.c_str());
+    this->dispatch_packet_(pkt);  // keep normal device handling alive
+    return reply;                 // first reply is the answer — stop waiting
+  }
+  ESP_LOGI(TAG, "[debug] no reply within %ums", static_cast<unsigned>(timeout_ms));
+  return "no reply";
 }
 
 void BusT4Component::send_break() {

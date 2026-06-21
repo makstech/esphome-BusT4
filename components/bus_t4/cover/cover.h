@@ -54,10 +54,6 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   void set_auto_learn_timing(bool enable) { auto_learn_timing_ = enable; }
   void set_position_report_interval(uint32_t interval) { position_report_interval_ = interval; }
 
-  // Raw command for debugging/testing
-  // Accepts hex string like "55.0C.00.FF..." or "550C00FF..."
-  void send_raw_cmd(const std::string &data);
-
  protected:
   void control(const cover::CoverCall &call) override;
 

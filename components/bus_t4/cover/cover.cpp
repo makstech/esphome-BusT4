@@ -4,7 +4,6 @@
 #include <cmath>
 #include <string>
 #include <algorithm>
-#include <cctype>
 
 namespace esphome::bus_t4 {
 
@@ -1081,29 +1080,6 @@ void BusT4Cover::load_learned_durations() {
   } else {
     ESP_LOGD(TAG, "No saved timing data found, using defaults");
   }
-}
-
-void BusT4Cover::send_raw_cmd(const std::string &data) {
-  // Parse hex string - remove all non-hex characters and convert pairs to bytes
-  // Accepts formats like "55.0C.00.FF..." or "550C00FF..."
-  std::string hex_data = data;
-  hex_data.erase(std::remove_if(hex_data.begin(), hex_data.end(),
-      [](unsigned char c) { return !std::isxdigit(c); }), hex_data.end());
-
-  if (hex_data.empty() || hex_data.size() % 2 != 0) {
-    ESP_LOGW(TAG, "Invalid raw command: %s", data.c_str());
-    return;
-  }
-
-  std::vector<uint8_t> bytes;
-  for (size_t i = 0; i + 1 < hex_data.size(); i += 2) {
-    bytes.push_back(static_cast<uint8_t>(std::strtol(hex_data.substr(i, 2).c_str(), nullptr, 16)));
-  }
-
-  if (bytes.empty()) return;
-
-  ESP_LOGI(TAG, "Sending raw command: %s", format_hex_pretty(bytes).c_str());
-  parent_->write_raw(bytes.data(), bytes.size());
 }
 
 uint32_t BusT4Cover::get_discovery_interval() const {
