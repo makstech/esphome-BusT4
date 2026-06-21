@@ -1,5 +1,5 @@
 import esphome.codegen as cg
-from esphome.components import cover, number, switch, text_sensor, uart
+from esphome.components import cover, number, select, switch, text_sensor, uart
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ADDRESS,
@@ -14,13 +14,14 @@ from esphome.const import (
 )
 
 DEPENDENCIES = ["uart"]
-AUTO_LOAD = ["cover", "switch", "text_sensor", "number"]
+AUTO_LOAD = ["cover", "switch", "text_sensor", "number", "select"]
 
 bus_t4_ns = cg.esphome_ns.namespace("bus_t4")
 BusT4Component = bus_t4_ns.class_("BusT4Component", cg.Component, uart.UARTDevice)
 BusT4Cover = bus_t4_ns.class_("BusT4Cover", cover.Cover, cg.Component)
 BusT4Switch = bus_t4_ns.class_("BusT4Switch", switch.Switch, cg.Component)
 BusT4Number = bus_t4_ns.class_("BusT4Number", number.Number, cg.Component)
+BusT4Select = bus_t4_ns.class_("BusT4Select", select.Select, cg.Component)
 
 CONF_BUS_T4_ID = "bus_t4_id"
 
@@ -44,10 +45,34 @@ NUMBER_TYPES = {
 }
 _NUMBER_ENUM = {k: v[0] for k, v in NUMBER_TYPES.items()}
 
+# Enumerated params: YAML type -> (param byte, default name, default icon, [(raw, label), ...]).
+# The controller reports the valid raw values via command-info; labels are ours,
+# from the programming manual, indexed by raw value (verified live: step_by_step
+# 0x61 is an 8-option list reporting raw 1-8).
+SELECT_TYPES = {
+    "step_by_step": (
+        0x61,
+        "Step-by-Step mode",
+        "mdi:gesture-tap-button",
+        [
+            (1, "Open-Stop-Close-Stop"),
+            (2, "Open-Stop-Close-Open"),
+            (3, "Open-Close-Open-Close"),
+            (4, "Condominium"),
+            (5, "Condominium 2"),
+            (6, "Step-by-Step 2"),
+            (7, "Hold-to-run"),
+            (8, "Semi-automatic"),
+        ],
+    ),
+}
+_SELECT_ENUM = {k: v[0] for k, v in SELECT_TYPES.items()}
+
 CONF_CONTROL_UNIT = "control_unit"
 CONF_COVER = "cover"
 CONF_FLAGS = "flags"
 CONF_NUMBERS = "numbers"
+CONF_SELECTS = "selects"
 CONF_DIAGNOSTICS = "diagnostics"
 CONF_FIRMWARE = "firmware"
 CONF_PRODUCT = "product"
@@ -116,6 +141,26 @@ def _number(value):
     return NUMBER_SCHEMA(value)
 
 
+SELECT_SCHEMA = (
+    select.select_schema(BusT4Select, entity_category=ENTITY_CATEGORY_CONFIG)
+    .extend(cv.COMPONENT_SCHEMA)
+    .extend({cv.Required(CONF_TYPE): cv.enum(_SELECT_ENUM, lower=True)})
+)
+
+
+def _select(value):
+    # Bare type ("step_by_step") or a map; inject the default name + icon from
+    # SELECT_TYPES before validating (select_schema requires id or name).
+    if not isinstance(value, dict):
+        value = {CONF_TYPE: value}
+    key = str(value.get(CONF_TYPE, "")).lower()
+    if key in SELECT_TYPES:
+        spec = SELECT_TYPES[key]
+        value.setdefault(CONF_NAME, spec[1])
+        value.setdefault(CONF_ICON, spec[2])
+    return SELECT_SCHEMA(value)
+
+
 def _diagnostics(value):
     # `diagnostics: true` creates the sensors with default names; a map renames them.
     if value is True:
@@ -141,6 +186,7 @@ CONTROL_UNIT_SCHEMA = cv.Schema(
         cv.Optional(CONF_COVER): COVER_SCHEMA,
         cv.Optional(CONF_FLAGS, default=[]): cv.ensure_list(_flag),
         cv.Optional(CONF_NUMBERS, default=[]): cv.ensure_list(_number),
+        cv.Optional(CONF_SELECTS, default=[]): cv.ensure_list(_select),
         cv.Optional(CONF_DIAGNOSTICS): _diagnostics,
     }
 )
@@ -209,6 +255,17 @@ async def to_code(config):
         if cu_address is not None:
             cg.add(num.set_target_address(cu_address))
         cg.add(num.set_param(byte))
+
+    for sc in cu[CONF_SELECTS]:
+        byte, _name, _icon, opts = SELECT_TYPES[str(sc[CONF_TYPE])]
+        sel = await select.new_select(sc, options=[label for _raw, label in opts])
+        await cg.register_component(sel, sc)
+        cg.add(sel.set_parent(var))
+        if cu_address is not None:
+            cg.add(sel.set_target_address(cu_address))
+        cg.add(sel.set_param(byte))
+        for raw, _label in opts:
+            cg.add(sel.add_option_value(raw))
 
     if CONF_DIAGNOSTICS in cu:
         v = cu[CONF_DIAGNOSTICS]

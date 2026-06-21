@@ -72,3 +72,4 @@ class BusT4Device {
 #include "cover.h"
 #include "switch.h"
 #include "number.h"
+#include "select.h"
