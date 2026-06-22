@@ -164,6 +164,7 @@ SELECT_TYPES = {
 _SELECT_ENUM = {k: v[0] for k, v in SELECT_TYPES.items()}
 
 CONF_CONTROL_UNIT = "control_unit"
+CONF_OXI = "oxi"
 CONF_COVER = "cover"
 CONF_FLAGS = "flags"
 CONF_NUMBERS = "numbers"
@@ -338,6 +339,24 @@ def _diagnostics(value):
     )(value)
 
 
+def _oxi(value):
+    # `oxi: true` creates the OXI (radio receiver) identity sensors with default
+    # names; a map renames them or assigns a device_id to group them in HA.
+    if value is True:
+        value = {}
+    diag = cv.maybe_simple_value(
+        text_sensor.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
+        key=CONF_NAME,
+    )
+    return cv.Schema(
+        {
+            cv.Optional(CONF_PRODUCT, default="OXI product"): diag,
+            cv.Optional(CONF_HARDWARE, default="OXI hardware"): diag,
+            cv.Optional(CONF_FIRMWARE, default="OXI firmware"): diag,
+        }
+    )(value)
+
+
 CONTROL_UNIT_SCHEMA = cv.Schema(
     {
         cv.Optional(CONF_NAME): cv.string,
@@ -358,6 +377,7 @@ CONFIG_SCHEMA = cv.All(
             cv.GenerateID(): cv.declare_id(BusT4Component),
             cv.Optional(CONF_ADDRESS, default=0x5090): cv.hex_uint16_t,
             cv.Optional(CONF_CONTROL_UNIT): CONTROL_UNIT_SCHEMA,
+            cv.Optional(CONF_OXI): _oxi,
         }
     )
     .extend(uart.UART_DEVICE_SCHEMA)
@@ -380,6 +400,12 @@ async def to_code(config):
     await cg.register_component(var, config)
     await uart.register_uart_device(var, config)
     cg.add(var.set_address(config[CONF_ADDRESS]))
+
+    if CONF_OXI in config:
+        o = config[CONF_OXI]
+        cg.add(var.set_oxi_product_sensor(await text_sensor.new_text_sensor(o[CONF_PRODUCT])))
+        cg.add(var.set_oxi_hardware_sensor(await text_sensor.new_text_sensor(o[CONF_HARDWARE])))
+        cg.add(var.set_oxi_firmware_sensor(await text_sensor.new_text_sensor(o[CONF_FIRMWARE])))
 
     if CONF_CONTROL_UNIT not in config:
         return

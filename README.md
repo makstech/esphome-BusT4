@@ -194,6 +194,7 @@ button:
 |----------|------|---------|-------------|
 | `address` | hex | `0x5090` | This ESP module's own bus address (the `from` field) |
 | `control_unit` | block | — | The motor controller and its entities (see below) |
+| `oxi` | bool/map | — | `true` adds OXI radio-receiver product/hardware/firmware diagnostic sensors (or a map to rename them / set a `device_id` to group them as a separate device) |
 
 #### control_unit
 

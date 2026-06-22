@@ -164,6 +164,20 @@ void BusT4Component::discover_() {
     hardware_sensor_->publish_state(hardware_);
   if (description_sensor_ != nullptr && !description_.empty())
     description_sensor_->publish_state(description_);
+
+  if (has_oxi_) {
+    oxi_product_ = fetch_string_(oxi_address_, INF_PRD);
+    oxi_hardware_ = fetch_string_(oxi_address_, INF_HWR);
+    oxi_firmware_ = fetch_string_(oxi_address_, INF_FRM);
+    ESP_LOGI(TAG, "OXI identity: %s hw=%s fw=%s", oxi_product_.c_str(), oxi_hardware_.c_str(),
+             oxi_firmware_.c_str());
+    if (oxi_product_sensor_ != nullptr && !oxi_product_.empty())
+      oxi_product_sensor_->publish_state(oxi_product_);
+    if (oxi_hardware_sensor_ != nullptr && !oxi_hardware_.empty())
+      oxi_hardware_sensor_->publish_state(oxi_hardware_);
+    if (oxi_firmware_sensor_ != nullptr && !oxi_firmware_.empty())
+      oxi_firmware_sensor_->publish_state(oxi_firmware_);
+  }
   discovered_ = true;
 }
 
@@ -174,7 +188,8 @@ void BusT4Component::dump_config() {
     ESP_LOGCONFIG(TAG, "  Controller: 0x%02X.%02X %s %s", controller_address_.address,
                   controller_address_.endpoint, product_.c_str(), firmware_.c_str());
     if (has_oxi_)
-      ESP_LOGCONFIG(TAG, "  OXI: 0x%02X.%02X", oxi_address_.address, oxi_address_.endpoint);
+      ESP_LOGCONFIG(TAG, "  OXI: 0x%02X.%02X %s %s", oxi_address_.address, oxi_address_.endpoint,
+                    oxi_product_.c_str(), oxi_firmware_.c_str());
   } else {
     ESP_LOGCONFIG(TAG, "  Controller: not discovered");
   }
@@ -357,7 +372,8 @@ bool BusT4Component::dmp_request(T4Source to, const uint8_t *msg, size_t len, T4
       continue;
     if (pkt.header.from == address_)  // skip TX echo
       continue;
-    if (pkt.header.protocol == DMP && pkt.message.command == expected_cmd) {
+    // Match source too: a FOR_ALL request is answered by both CU and OXI.
+    if (pkt.header.protocol == DMP && pkt.message.command == expected_cmd && pkt.header.from == to) {
       *reply = pkt;
       return true;
     }

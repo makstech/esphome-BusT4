@@ -73,6 +73,9 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   void set_product_sensor(text_sensor::TextSensor *s) { product_sensor_ = s; }
   void set_hardware_sensor(text_sensor::TextSensor *s) { hardware_sensor_ = s; }
   void set_description_sensor(text_sensor::TextSensor *s) { description_sensor_ = s; }
+  void set_oxi_product_sensor(text_sensor::TextSensor *s) { oxi_product_sensor_ = s; }
+  void set_oxi_hardware_sensor(text_sensor::TextSensor *s) { oxi_hardware_sensor_ = s; }
+  void set_oxi_firmware_sensor(text_sensor::TextSensor *s) { oxi_firmware_sensor_ = s; }
   void set_bus_errors_sensor(sensor::Sensor *s) { bus_errors_sensor_ = s; }
   void set_bus_timeouts_sensor(sensor::Sensor *s) { bus_timeouts_sensor_ = s; }
 
@@ -123,6 +126,9 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   text_sensor::TextSensor *product_sensor_{nullptr};
   text_sensor::TextSensor *hardware_sensor_{nullptr};
   text_sensor::TextSensor *description_sensor_{nullptr};
+  text_sensor::TextSensor *oxi_product_sensor_{nullptr};
+  text_sensor::TextSensor *oxi_hardware_sensor_{nullptr};
+  text_sensor::TextSensor *oxi_firmware_sensor_{nullptr};
 
   bool discovered_{false};
   uint32_t last_discover_{0};
@@ -134,6 +140,9 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   std::string firmware_;
   std::string hardware_;
   std::string description_;
+  std::string oxi_product_;
+  std::string oxi_hardware_;
+  std::string oxi_firmware_;
 
   // Cached UART port for direct baud rate register writes during break signal.
   uart_port_t uart_num_ = UART_NUM_MAX;

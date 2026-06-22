@@ -149,16 +149,6 @@ void BusT4Cover::dump_config() {
       ESP_LOGCONFIG(TAG, "  Position source: Time-based estimation");
     }
 
-    // OXI receiver info
-    if (has_oxi_) {
-      ESP_LOGCONFIG(TAG, "  OXI Address: 0x%02X.%02X", oxi_address_.address, oxi_address_.endpoint);
-      if (!oxi_product_.empty()) {
-        ESP_LOGCONFIG(TAG, "  OXI Product: %s", oxi_product_.c_str());
-      }
-      if (!oxi_firmware_.empty()) {
-        ESP_LOGCONFIG(TAG, "  OXI Firmware: %s", oxi_firmware_.c_str());
-      }
-    }
   }
 }
 
@@ -611,33 +601,6 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       break;
     }
 
-    // Controller identity (manufacturer/product/firmware) is discovered by the
-    // component now; only OXI identity replies are handled here.
-    case INF_PRD: {
-      size_t str_len = packet.size - DATA_OFFSET - 1;  // -1 for checksum
-      if (str_len > 0 && str_len < 64 && has_oxi_ && packet.header.from == oxi_address_) {
-        oxi_product_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
-        size_t null_pos = oxi_product_.find('\0');
-        if (null_pos != std::string::npos) {
-          oxi_product_.resize(null_pos);
-        }
-        ESP_LOGI(TAG, "OXI Product: %s", oxi_product_.c_str());
-      }
-      break;
-    }
-
-    case INF_FRM: {
-      size_t str_len = packet.size - DATA_OFFSET - 1;  // -1 for checksum
-      if (str_len > 0 && str_len < 64 && has_oxi_ && packet.header.from == oxi_address_) {
-        oxi_firmware_.assign(reinterpret_cast<const char*>(&packet.data[DATA_OFFSET]), str_len);
-        size_t null_pos = oxi_firmware_.find('\0');
-        if (null_pos != std::string::npos) {
-          oxi_firmware_.resize(null_pos);
-        }
-        ESP_LOGI(TAG, "OXI Firmware: %s", oxi_firmware_.c_str());
-      }
-      break;
-    }
   }
 }
 
@@ -704,10 +667,6 @@ void BusT4Cover::init_device() {
         is_walky_ = true;
         ESP_LOGI(TAG, "Detected Walky device - using 1-byte position mode");
       }
-      has_oxi_ = parent_->has_oxi();
-      oxi_address_ = parent_->get_oxi_address();
-      if (has_oxi_)
-        init_oxi_device();
       init_step_ = 1;
       break;
 
@@ -742,27 +701,6 @@ void BusT4Cover::init_device() {
     default:
       break;
   }
-}
-
-void BusT4Cover::init_oxi_device() {
-  if (!has_oxi_) return;
-
-  ESP_LOGI(TAG, "Querying OXI device at 0x%02X.%02X",
-           oxi_address_.address, oxi_address_.endpoint);
-
-  // Query OXI device info
-  // Build packets targeting the OXI address
-  uint8_t prd_msg[5] = { FOR_ALL, INF_PRD, REQ_GET, 0x00, 0x00 };
-  T4Packet prd_packet(oxi_address_, parent_->get_address(), DMP, prd_msg, sizeof(prd_msg));
-  write(&prd_packet, 0);
-
-  uint8_t hwr_msg[5] = { FOR_ALL, INF_HWR, REQ_GET, 0x00, 0x00 };
-  T4Packet hwr_packet(oxi_address_, parent_->get_address(), DMP, hwr_msg, sizeof(hwr_msg));
-  write(&hwr_packet, 0);
-
-  uint8_t frm_msg[5] = { FOR_ALL, INF_FRM, REQ_GET, 0x00, 0x00 };
-  T4Packet frm_packet(oxi_address_, parent_->get_address(), DMP, frm_msg, sizeof(frm_msg));
-  write(&frm_packet, 0);
 }
 
 void BusT4Cover::request_position() {
