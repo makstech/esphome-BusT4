@@ -63,6 +63,15 @@ void BusT4Component::loop() {
   T4Packet packet;
   while (xQueueReceive(rxQueue_, &packet, 0))
     this->dispatch_packet_(packet);
+
+  if (bus_errors_sensor_ != nullptr && rx_errors_ != last_bus_errors_) {
+    last_bus_errors_ = rx_errors_;
+    bus_errors_sensor_->publish_state(rx_errors_);
+  }
+  if (bus_timeouts_sensor_ != nullptr && req_timeout_ != last_bus_timeouts_) {
+    last_bus_timeouts_ = req_timeout_;
+    bus_timeouts_sensor_->publish_state(req_timeout_);
+  }
 }
 
 void BusT4Component::dispatch_packet_(const T4Packet &packet) {
@@ -82,7 +91,7 @@ void BusT4Component::set_controller_address(T4Source addr) {
 std::string BusT4Component::fetch_string_(T4Source to, uint8_t info_cmd) {
   uint8_t msg[5] = {FOR_ALL, info_cmd, REQ_GET, 0x00, 0x00};
   T4Packet reply;
-  if (!this->dmp_request(to, msg, sizeof(msg), &reply, 400))
+  if (!this->dmp_request(to, msg, sizeof(msg), &reply, 500))
     return "";
   if (reply.size < 14)  // 7 header + 5 msg header + >=1 char + CRC
     return "";
@@ -216,6 +225,7 @@ void BusT4Component::rxTask() {
               ESP_LOGW(TAG, "Header checksum mismatch: expected 0x%02X, got 0x%02X: %s",
                        header_check, packet.data[6],
                        format_hex_pretty(packet.data, packet.size).c_str());
+              rx_errors_++;
               rx_state = WAIT_SYNC;
               break;
             }
@@ -230,6 +240,7 @@ void BusT4Component::rxTask() {
                 ESP_LOGW(TAG, "Payload checksum mismatch: expected 0x%02X, got 0x%02X: %s",
                          payload_check, packet.data[packet.size - 1],
                          format_hex_pretty(packet.data, packet.size).c_str());
+                rx_errors_++;
                 rx_state = WAIT_SYNC;
                 break;
               }
@@ -240,9 +251,11 @@ void BusT4Component::rxTask() {
                      format_hex_pretty(packet.data, packet.size).c_str(), packet.size);
             if (!xQueueSend(rxQueue_, &packet, pdMS_TO_TICKS(100))) {
               ESP_LOGW(TAG, "RX queue full, dropping packet");
+              rx_errors_++;
             }
           } else {
             ESP_LOGW(TAG, "Trailing size mismatch: expected 0x%02X, got 0x%02X", expected_size, byte);
+            rx_errors_++;
           }
           rx_state = WAIT_SYNC;
           break;
@@ -350,6 +363,7 @@ bool BusT4Component::dmp_request(T4Source to, const uint8_t *msg, size_t len, T4
     }
     this->dispatch_packet_(pkt);  // not ours — dispatch normally
   }
+  this->req_timeout_++;
   return false;
 }
 

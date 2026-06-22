@@ -207,7 +207,7 @@ button:
 | `selects` | list | — | Enumerated param `select`s (types below) |
 | `sensors` | list | — | Read-only `sensor`s polled from the controller (types below) |
 | `buttons` | list | — | Action `button`s that write a fixed value (types below) |
-| `diagnostics` | bool/map | — | `true` adds firmware/product/hardware/description diagnostic sensors (or a map to rename them) |
+| `diagnostics` | bool/map | — | `true` adds firmware/product/hardware/description text sensors plus bus-error and bus-timeout counters (or a map to rename them) |
 
 Every `flags`/`numbers`/`selects`/`sensors`/`buttons` entry is a bare type name **or** a map with per-entity overrides (`name`, `icon`, `id`, …). Settable entities send a SET on change and also track GET/SET replies on the bus, so changes made elsewhere (Oview, another client) are reflected immediately. A param the controller doesn't support shows as unavailable.
 

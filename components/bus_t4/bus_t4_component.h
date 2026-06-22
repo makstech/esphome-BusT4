@@ -8,6 +8,7 @@
 #include <vector>
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/text_sensor/text_sensor.h"
+#include "esphome/components/sensor/sensor.h"
 #include "t4_packet.h"
 
 #include <driver/uart.h>
@@ -72,6 +73,8 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   void set_product_sensor(text_sensor::TextSensor *s) { product_sensor_ = s; }
   void set_hardware_sensor(text_sensor::TextSensor *s) { hardware_sensor_ = s; }
   void set_description_sensor(text_sensor::TextSensor *s) { description_sensor_ = s; }
+  void set_bus_errors_sensor(sensor::Sensor *s) { bus_errors_sensor_ = s; }
+  void set_bus_timeouts_sensor(sensor::Sensor *s) { bus_timeouts_sensor_ = s; }
 
   // Propagate the discovered controller address to every registered device
   // (each ignores it if its address was pinned via config).
@@ -134,6 +137,15 @@ class BusT4Component final : public Component, public uart::UARTDevice {
 
   // Cached UART port for direct baud rate register writes during break signal.
   uart_port_t uart_num_ = UART_NUM_MAX;
+
+  sensor::Sensor *bus_errors_sensor_{nullptr};
+  sensor::Sensor *bus_timeouts_sensor_{nullptr};
+
+  // Bus diagnostics (cumulative since boot); written by rxTask/dmp_request.
+  uint32_t rx_errors_{0};    // bad frame: header/payload CRC, framing, or rxQueue full (logged per type)
+  uint32_t req_timeout_{0};  // dmp_request gave up waiting for a reply
+  uint32_t last_bus_errors_{0xFFFFFFFF};
+  uint32_t last_bus_timeouts_{0xFFFFFFFF};
 };
 
 enum { EB_REQUEST_FREE = 1, EB_REQUEST_PENDING = 2, EB_REQUEST_COMPLETE = 4 };

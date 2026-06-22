@@ -174,6 +174,8 @@ CONF_FIRMWARE = "firmware"
 CONF_PRODUCT = "product"
 CONF_HARDWARE = "hardware"
 CONF_DESCRIPTION = "description"
+CONF_BUS_ERRORS = "bus_errors"
+CONF_BUS_TIMEOUTS = "bus_timeouts"
 CONF_OPEN_DURATION = "open_duration"
 CONF_CLOSE_DURATION = "close_duration"
 CONF_AUTO_LEARN_TIMING = "auto_learn_timing"
@@ -310,12 +312,27 @@ def _diagnostics(value):
         text_sensor.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
         key=CONF_NAME,
     )
+
+    def busdiag(icon):
+        return cv.maybe_simple_value(
+            sensor.sensor_schema(
+                sensor.Sensor,
+                accuracy_decimals=0,
+                state_class="total_increasing",
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon=icon,
+            ),
+            key=CONF_NAME,
+        )
+
     return cv.Schema(
         {
             cv.Optional(CONF_FIRMWARE, default="Firmware"): diag,
             cv.Optional(CONF_PRODUCT, default="Product"): diag,
             cv.Optional(CONF_HARDWARE, default="Hardware"): diag,
             cv.Optional(CONF_DESCRIPTION, default="Description"): diag,
+            cv.Optional(CONF_BUS_ERRORS, default="Bus errors"): busdiag("mdi:alert-circle-outline"),
+            cv.Optional(CONF_BUS_TIMEOUTS, default="Bus timeouts"): busdiag("mdi:timer-alert-outline"),
         }
     )(value)
 
@@ -438,3 +455,5 @@ async def to_code(config):
         cg.add(var.set_product_sensor(await text_sensor.new_text_sensor(v[CONF_PRODUCT])))
         cg.add(var.set_hardware_sensor(await text_sensor.new_text_sensor(v[CONF_HARDWARE])))
         cg.add(var.set_description_sensor(await text_sensor.new_text_sensor(v[CONF_DESCRIPTION])))
+        cg.add(var.set_bus_errors_sensor(await sensor.new_sensor(v[CONF_BUS_ERRORS])))
+        cg.add(var.set_bus_timeouts_sensor(await sensor.new_sensor(v[CONF_BUS_TIMEOUTS])))
