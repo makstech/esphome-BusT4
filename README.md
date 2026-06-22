@@ -248,17 +248,17 @@ bus_t4:
 | `type` | Description | Range |
 |---|---|---|
 | `pause_time` | Auto-close pause time | 0–240 s |
-| `speed_opening` | Opening speed | 25–100 % |
-| `speed_closing` | Closing speed | 25–100 % |
-| `force_opening` | Opening force | 0–100 % |
-| `force_closing` | Closing force | 0–100 % |
+| `speed_opening` | Speed (opening) | 25–100 % |
+| `speed_closing` | Speed (closing) | 25–100 % |
+| `force_opening` | Force (opening) | 0–100 % |
+| `force_closing` | Force (closing) | 0–100 % |
 | `maintenance_threshold` | Maintenance threshold | 100–20000 |
 | `photo_close_time` | Close after photo time | 0–250 s |
 | `always_close_time` | Always-close time | 0–20 s |
 | `standby_time` | Stand-by time | 5–250 s |
 | `surge_time` | Surge time | 1–10 s |
-| `pre_flash_open_time` | Opening pre-flash time | 1–10 s |
-| `pre_flash_close_time` | Closing pre-flash time | 1–10 s |
+| `pre_flash_open_time` | Pre-flash time (opening) | 1–10 s |
+| `pre_flash_close_time` | Pre-flash time (closing) | 1–10 s |
 | `max_work_time` | Maximum work time | 10–250 s |
 | `courtesy_light_time` | Courtesy light time | 0–240 s |
 | `electric_lock_time` | Electric lock time | 0.1–10 s |
