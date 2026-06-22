@@ -202,17 +202,34 @@ button:
 | `name` | string | — | Name prefix for auto-created entities |
 | `address` | hex | *auto* | Controller address override; auto-detected via `INF_WHO` when omitted |
 | `cover` | block | — | The gate cover (options below) |
-| `flags` | list | — | Config-flag switches (see types below) |
-| `numbers` | list | — | Numeric param `number`s; currently `pause_time` (auto-close pause, 0–240 s) |
+| `flags` | list | — | Config-flag `switch`es (types below) |
+| `numbers` | list | — | Numeric param `number`s (types below) |
+| `selects` | list | — | Enumerated param `select`s (types below) |
+| `sensors` | list | — | Read-only `sensor`s polled from the controller (types below) |
+| `buttons` | list | — | Action `button`s that write a fixed value (types below) |
 | `diagnostics` | bool/map | — | `true` adds firmware/product/hardware/description diagnostic sensors (or a map to rename them) |
+
+Every `flags`/`numbers`/`selects`/`sensors`/`buttons` entry is a bare type name **or** a map with per-entity overrides (`name`, `icon`, `id`, …). Settable entities send a SET on change and also track GET/SET replies on the bus, so changes made elsewhere (Oview, another client) are reflected immediately. A param the controller doesn't support shows as unavailable.
 
 `cover` options: `name` (*required*), `auto_learn_timing` (`true`), `open_duration` (`20s`), `close_duration` (`20s`), `position_report_interval` (`1s`).
 
-Each `flags` entry is a bare type name **or** a map with `name`/`icon` overrides. Toggling a flag sends a SET; it also tracks GET/SET replies on the bus, so changes made elsewhere (Oview, another client) are reflected immediately. A flag the controller doesn't support shows as unavailable.
+```yaml
+bus_t4:
+  id: bus
+  control_unit:
+    name: "Gate"
+    flags: [photo_close, auto_close]
+    numbers: [pause_time, standby_time]
+    selects: [step_by_step, standby_mode]
+    sensors: [total_maneuvers]
+    buttons: [reset_maintenance]
+```
+
+##### `flags` types (`switch`)
 
 <!-- BEGIN SWITCH_TYPES -->
 | `type` | Description |
-|--------|-------------|
+|---|---|
 | `auto_close` | Auto-close |
 | `photo_close` | Close after photo |
 | `always_close` | Always close |
@@ -225,13 +242,61 @@ Each `flags` entry is a bare type name **or** a map with `name`/`icon` overrides
 | `button_lock` | Button lock |
 <!-- END SWITCH_TYPES -->
 
-```yaml
-bus_t4:
-  id: bus
-  control_unit:
-    name: "Gate"
-    flags: [photo_close, auto_close]
-```
+##### `numbers` types (`number`)
+
+<!-- BEGIN NUMBER_TYPES -->
+| `type` | Description | Range |
+|---|---|---|
+| `pause_time` | Auto-close pause time | 0–240 s |
+| `speed_opening` | Opening speed | 25–100 % |
+| `speed_closing` | Closing speed | 25–100 % |
+| `force_opening` | Opening force | 0–100 % |
+| `force_closing` | Closing force | 0–100 % |
+| `maintenance_threshold` | Maintenance threshold | 100–20000 |
+| `photo_close_time` | Close after photo time | 0–250 s |
+| `always_close_time` | Always-close time | 0–20 s |
+| `standby_time` | Stand-by time | 5–250 s |
+| `max_work_time` | Maximum work time | 10–250 s |
+| `courtesy_light_time` | Courtesy light time | 0–240 s |
+| `electric_lock_time` | Electric lock time | 0.1–10 s |
+| `suction_cup_time` | Suction cup time | 0.1–10 s |
+| `brief_reversal` | Brief reversal | 0.5–5 s |
+<!-- END NUMBER_TYPES -->
+
+##### `selects` types (`select`)
+
+<!-- BEGIN SELECT_TYPES -->
+| `type` | Description |
+|---|---|
+| `step_by_step` | Step-by-Step mode |
+| `output_1` | Output 1 function |
+| `output_2` | Output 2 function |
+| `output_3` | Output 3 function |
+| `output_4` | Output 4 function |
+| `output_5` | Output 5 function |
+| `output_6` | Output 6 function |
+| `maintenance_management` | Maintenance management |
+| `photo_close_mode` | Close after photo mode |
+| `always_close_mode` | Always-close mode |
+| `standby_mode` | Stand-by mode |
+<!-- END SELECT_TYPES -->
+
+##### `sensors` types (`sensor`, read-only)
+
+<!-- BEGIN SENSOR_TYPES -->
+| `type` | Description |
+|---|---|
+| `maintenance_count` | Maintenance counter |
+| `total_maneuvers` | Total maneuvers |
+<!-- END SENSOR_TYPES -->
+
+##### `buttons` types (`button`, momentary)
+
+<!-- BEGIN BUTTON_TYPES -->
+| `type` | Description |
+|---|---|
+| `reset_maintenance` | Reset maintenance counter |
+<!-- END BUTTON_TYPES -->
 
 ### Available Commands
 
