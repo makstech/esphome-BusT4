@@ -3,6 +3,7 @@ from esphome.components import button, cover, number, select, sensor, switch, te
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ADDRESS,
+    CONF_DEVICE_ID,
     CONF_ICON,
     CONF_ID,
     CONF_MODE,
@@ -24,6 +25,10 @@ BusT4Number = bus_t4_ns.class_("BusT4Number", number.Number, cg.Component)
 BusT4Select = bus_t4_ns.class_("BusT4Select", select.Select, cg.Component)
 BusT4Sensor = bus_t4_ns.class_("BusT4Sensor", sensor.Sensor, cg.PollingComponent)
 BusT4Button = bus_t4_ns.class_("BusT4Button", button.Button, cg.Component)
+
+# Sub-device (declared in `esphome: devices:`) that a control_unit/oxi block can
+# assign all of its entities to, so they group under one device in HA.
+Device = cg.esphome_ns.class_("Device")
 
 CONF_BUS_T4_ID = "bus_t4_id"
 
@@ -165,6 +170,7 @@ _SELECT_ENUM = {k: v[0] for k, v in SELECT_TYPES.items()}
 
 CONF_CONTROL_UNIT = "control_unit"
 CONF_OXI = "oxi"
+CONF_DEVICE = "device"
 CONF_COVER = "cover"
 CONF_FLAGS = "flags"
 CONF_NUMBERS = "numbers"
@@ -350,6 +356,7 @@ def _oxi(value):
     )
     return cv.Schema(
         {
+            cv.Optional(CONF_DEVICE): cv.use_id(Device),  # group OXI sensors under this device
             cv.Optional(CONF_PRODUCT, default="OXI product"): diag,
             cv.Optional(CONF_HARDWARE, default="OXI hardware"): diag,
             cv.Optional(CONF_FIRMWARE, default="OXI firmware"): diag,
@@ -360,6 +367,7 @@ def _oxi(value):
 CONTROL_UNIT_SCHEMA = cv.Schema(
     {
         cv.Optional(CONF_NAME): cv.string,
+        cv.Optional(CONF_DEVICE): cv.use_id(Device),  # group all CU entities under this device
         cv.Optional(CONF_ADDRESS): cv.hex_uint16_t,  # control-unit address override
         cv.Optional(CONF_COVER): COVER_SCHEMA,
         cv.Optional(CONF_FLAGS, default=[]): cv.ensure_list(_flag),
@@ -403,6 +411,10 @@ async def to_code(config):
 
     if CONF_OXI in config:
         o = config[CONF_OXI]
+        oxi_dev = o.get(CONF_DEVICE)
+        for c in (o[CONF_PRODUCT], o[CONF_HARDWARE], o[CONF_FIRMWARE]):
+            if oxi_dev is not None:
+                c.setdefault(CONF_DEVICE_ID, oxi_dev)
         cg.add(var.set_oxi_product_sensor(await text_sensor.new_text_sensor(o[CONF_PRODUCT])))
         cg.add(var.set_oxi_hardware_sensor(await text_sensor.new_text_sensor(o[CONF_HARDWARE])))
         cg.add(var.set_oxi_firmware_sensor(await text_sensor.new_text_sensor(o[CONF_FIRMWARE])))
@@ -412,6 +424,22 @@ async def to_code(config):
     cu = config[CONF_CONTROL_UNIT]
 
     cu_address = cu.get(CONF_ADDRESS)  # controller address override (pins the target)
+
+    # Group all CU entities under one HA device, if configured.
+    cu_dev = cu.get(CONF_DEVICE)
+    if cu_dev is not None:
+        confs = (
+            list(cu[CONF_FLAGS]) + list(cu[CONF_NUMBERS]) + list(cu[CONF_SELECTS])
+            + list(cu[CONF_SENSORS]) + list(cu[CONF_BUTTONS])
+        )
+        if CONF_COVER in cu:
+            confs.append(cu[CONF_COVER])
+        if CONF_DIAGNOSTICS in cu:
+            d = cu[CONF_DIAGNOSTICS]
+            confs += [d[CONF_FIRMWARE], d[CONF_PRODUCT], d[CONF_HARDWARE], d[CONF_DESCRIPTION],
+                      d[CONF_BUS_ERRORS], d[CONF_BUS_TIMEOUTS]]
+        for c in confs:
+            c.setdefault(CONF_DEVICE_ID, cu_dev)
 
     if CONF_COVER in cu:
         cc = cu[CONF_COVER]

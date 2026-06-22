@@ -194,13 +194,14 @@ button:
 |----------|------|---------|-------------|
 | `address` | hex | `0x5090` | This ESP module's own bus address (the `from` field) |
 | `control_unit` | block | — | The motor controller and its entities (see below) |
-| `oxi` | bool/map | — | `true` adds OXI radio-receiver product/hardware/firmware diagnostic sensors (or a map to rename them / set a `device_id` to group them as a separate device) |
+| `oxi` | bool/map | — | `true` adds OXI radio-receiver product/hardware/firmware diagnostic sensors. A map can rename them or set `device:` (a device from `esphome: devices:`) to group them as a separate HA device |
 
 #### control_unit
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `name` | string | — | Name prefix for auto-created entities |
+| `device` | id | — | A device declared in `esphome: devices:` — all of this block's entities are grouped under it as one HA device (set once, no per-entity `device_id`) |
 | `address` | hex | *auto* | Controller address override; auto-detected via `INF_WHO` when omitted |
 | `cover` | block | — | The gate cover (options below) |
 | `flags` | list | — | Config-flag `switch`es (types below) |
