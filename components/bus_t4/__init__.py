@@ -58,6 +58,7 @@ NUMBER_TYPES = {
     "max_work_time": (0xA7, 10, 250, 1, "s", "Maximum work time", "mdi:timer-alert-outline", 1, 1),
     "courtesy_light_time": (0x5B, 0, 240, 1, "s", "Courtesy light time", "mdi:lightbulb-on-outline", 1, 1),
     "electric_lock_time": (0x5A, 0.1, 10, 0.1, "s", "Electric lock time", "mdi:lock-clock", 1, 0.1),
+    "suction_cup_time": (0x5C, 0.1, 10, 0.1, "s", "Suction cup time", "mdi:magnet", 1, 0.1),
     "brief_reversal": (0x31, 0.5, 5, 0.1, "s", "Brief reversal", "mdi:backup-restore", 1, 0.1),
 }
 _NUMBER_ENUM = {k: v[0] for k, v in NUMBER_TYPES.items()}
