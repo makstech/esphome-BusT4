@@ -232,8 +232,8 @@ bus_t4:
 |---|---|
 | `auto_close` | Auto-close |
 | `photo_close` | Close after photo |
-| `always_close` | Always close |
-| `standby` | Standby |
+| `always_close` | Always-close |
+| `standby` | Stand-by |
 | `surge` | Surge |
 | `pre_flash` | Pre-flashing |
 | `disable_internal_radio` | Disable internal radio |
@@ -257,7 +257,7 @@ bus_t4:
 | `always_close_time` | Always-close time | 0–20 s |
 | `standby_time` | Stand-by time | 5–250 s |
 | `surge_time` | Surge time | 1–10 s |
-| `pre_flash_time` | Pre-flash time | 1–10 s |
+| `pre_flash_time` | Pre-flashing time | 1–10 s |
 | `max_work_time` | Maximum work time | 10–250 s |
 | `courtesy_light_time` | Courtesy light time | 0–240 s |
 | `electric_lock_time` | Electric lock time | 0.1–10 s |

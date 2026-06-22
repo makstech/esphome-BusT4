@@ -31,8 +31,8 @@ CONF_BUS_T4_ID = "bus_t4_id"
 CONFIG_TYPES = {
     "auto_close": (0x80, "Auto-close", "mdi:gate-arrow-right"),
     "photo_close": (0x84, "Close after photo", "mdi:motion-sensor"),
-    "always_close": (0x88, "Always close", "mdi:lock"),
-    "standby": (0x8C, "Standby", "mdi:power-standby"),
+    "always_close": (0x88, "Always-close", "mdi:lock"),
+    "standby": (0x8C, "Stand-by", "mdi:power-standby"),
     "surge": (0x90, "Surge", "mdi:rocket-launch"),
     "pre_flash": (0x94, "Pre-flashing", "mdi:alarm-light"),
     "disable_internal_radio": (0x9B, "Disable internal radio", "mdi:radio-off"),  # on = radio off
@@ -56,7 +56,7 @@ NUMBER_TYPES = {
     "always_close_time": (0x89, 0, 20, 1, "s", "Always-close time", "mdi:timer-outline", 1, 1),
     "standby_time": (0x8D, 5, 250, 1, "s", "Stand-by time", "mdi:timer-outline", 1, 1),
     "surge_time": (0x91, 1, 10, 0.1, "s", "Surge time", "mdi:timer-outline", 1, 0.1),
-    "pre_flash_time": (0x95, 1, 10, 1, "s", "Pre-flash time", "mdi:timer-outline", 1, 1),
+    "pre_flash_time": (0x95, 1, 10, 1, "s", "Pre-flashing time", "mdi:timer-outline", 1, 1),
     "max_work_time": (0xA7, 10, 250, 1, "s", "Maximum work time", "mdi:timer-alert-outline", 1, 1),
     "courtesy_light_time": (0x5B, 0, 240, 1, "s", "Courtesy light time", "mdi:lightbulb-on-outline", 1, 1),
     "electric_lock_time": (0x5A, 0.1, 10, 0.1, "s", "Electric lock time", "mdi:lock-clock", 1, 0.1),
