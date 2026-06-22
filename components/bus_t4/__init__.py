@@ -26,8 +26,7 @@ BusT4Select = bus_t4_ns.class_("BusT4Select", select.Select, cg.Component)
 BusT4Sensor = bus_t4_ns.class_("BusT4Sensor", sensor.Sensor, cg.PollingComponent)
 BusT4Button = bus_t4_ns.class_("BusT4Button", button.Button, cg.Component)
 
-# Sub-device (declared in `esphome: devices:`) that a control_unit/oxi block can
-# assign all of its entities to, so they group under one device in HA.
+# ESPHome sub-device, referenced by a control_unit/oxi `device:` key.
 Device = cg.esphome_ns.class_("Device")
 
 CONF_BUS_T4_ID = "bus_t4_id"
@@ -184,6 +183,7 @@ CONF_HARDWARE = "hardware"
 CONF_DESCRIPTION = "description"
 CONF_BUS_ERRORS = "bus_errors"
 CONF_BUS_TIMEOUTS = "bus_timeouts"
+CONF_BUS_DIAGNOSTICS = "bus_diagnostics"
 CONF_OPEN_DURATION = "open_duration"
 CONF_CLOSE_DURATION = "close_duration"
 CONF_AUTO_LEARN_TIMING = "auto_learn_timing"
@@ -312,14 +312,9 @@ def _button(value):
     return BUTTON_SCHEMA(value)
 
 
-def _diagnostics(value):
-    # `diagnostics: true` creates the sensors with default names; a map renames them.
+def _bus_diagnostics(value):
     if value is True:
         value = {}
-    diag = cv.maybe_simple_value(
-        text_sensor.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
-        key=CONF_NAME,
-    )
 
     def busdiag(icon):
         return cv.maybe_simple_value(
@@ -335,12 +330,26 @@ def _diagnostics(value):
 
     return cv.Schema(
         {
+            cv.Optional(CONF_BUS_ERRORS, default="Bus errors"): busdiag("mdi:alert-circle-outline"),
+            cv.Optional(CONF_BUS_TIMEOUTS, default="Bus timeouts"): busdiag("mdi:timer-alert-outline"),
+        }
+    )(value)
+
+
+def _diagnostics(value):
+    # `diagnostics: true` creates the sensors with default names; a map renames them.
+    if value is True:
+        value = {}
+    diag = cv.maybe_simple_value(
+        text_sensor.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
+        key=CONF_NAME,
+    )
+    return cv.Schema(
+        {
             cv.Optional(CONF_FIRMWARE, default="Firmware"): diag,
             cv.Optional(CONF_PRODUCT, default="Product"): diag,
             cv.Optional(CONF_HARDWARE, default="Hardware"): diag,
             cv.Optional(CONF_DESCRIPTION, default="Description"): diag,
-            cv.Optional(CONF_BUS_ERRORS, default="Bus errors"): busdiag("mdi:alert-circle-outline"),
-            cv.Optional(CONF_BUS_TIMEOUTS, default="Bus timeouts"): busdiag("mdi:timer-alert-outline"),
         }
     )(value)
 
@@ -386,6 +395,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_ADDRESS, default=0x5090): cv.hex_uint16_t,
             cv.Optional(CONF_CONTROL_UNIT): CONTROL_UNIT_SCHEMA,
             cv.Optional(CONF_OXI): _oxi,
+            cv.Optional(CONF_BUS_DIAGNOSTICS): _bus_diagnostics,
         }
     )
     .extend(uart.UART_DEVICE_SCHEMA)
@@ -408,6 +418,11 @@ async def to_code(config):
     await cg.register_component(var, config)
     await uart.register_uart_device(var, config)
     cg.add(var.set_address(config[CONF_ADDRESS]))
+
+    if CONF_BUS_DIAGNOSTICS in config:
+        bd = config[CONF_BUS_DIAGNOSTICS]
+        cg.add(var.set_bus_errors_sensor(await sensor.new_sensor(bd[CONF_BUS_ERRORS])))
+        cg.add(var.set_bus_timeouts_sensor(await sensor.new_sensor(bd[CONF_BUS_TIMEOUTS])))
 
     if CONF_OXI in config:
         o = config[CONF_OXI]
@@ -436,8 +451,7 @@ async def to_code(config):
             confs.append(cu[CONF_COVER])
         if CONF_DIAGNOSTICS in cu:
             d = cu[CONF_DIAGNOSTICS]
-            confs += [d[CONF_FIRMWARE], d[CONF_PRODUCT], d[CONF_HARDWARE], d[CONF_DESCRIPTION],
-                      d[CONF_BUS_ERRORS], d[CONF_BUS_TIMEOUTS]]
+            confs += [d[CONF_FIRMWARE], d[CONF_PRODUCT], d[CONF_HARDWARE], d[CONF_DESCRIPTION]]
         for c in confs:
             c.setdefault(CONF_DEVICE_ID, cu_dev)
 
@@ -510,5 +524,3 @@ async def to_code(config):
         cg.add(var.set_product_sensor(await text_sensor.new_text_sensor(v[CONF_PRODUCT])))
         cg.add(var.set_hardware_sensor(await text_sensor.new_text_sensor(v[CONF_HARDWARE])))
         cg.add(var.set_description_sensor(await text_sensor.new_text_sensor(v[CONF_DESCRIPTION])))
-        cg.add(var.set_bus_errors_sensor(await sensor.new_sensor(v[CONF_BUS_ERRORS])))
-        cg.add(var.set_bus_timeouts_sensor(await sensor.new_sensor(v[CONF_BUS_TIMEOUTS])))

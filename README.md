@@ -194,6 +194,7 @@ button:
 |----------|------|---------|-------------|
 | `address` | hex | `0x5090` | This ESP module's own bus address (the `from` field) |
 | `control_unit` | block | — | The motor controller and its entities (see below) |
+| `bus_diagnostics` | bool/map | — | `true` adds Bus-T4 link health sensors: frame errors and request timeouts |
 | `oxi` | bool/map | — | `true` adds OXI radio-receiver product/hardware/firmware diagnostic sensors. A map can rename them or set `device:` (a device from `esphome: devices:`) to group them as a separate HA device |
 
 #### control_unit
@@ -209,7 +210,7 @@ button:
 | `selects` | list | — | Enumerated param `select`s (types below) |
 | `sensors` | list | — | Read-only `sensor`s polled from the controller (types below) |
 | `buttons` | list | — | Action `button`s that write a fixed value (types below) |
-| `diagnostics` | bool/map | — | `true` adds firmware/product/hardware/description text sensors plus bus-error and bus-timeout counters (or a map to rename them) |
+| `diagnostics` | bool/map | — | `true` adds the controller's firmware/product/hardware/description text sensors (or a map to rename them) |
 
 Every `flags`/`numbers`/`selects`/`sensors`/`buttons` entry is a bare type name **or** a map with per-entity overrides (`name`, `icon`, `id`, …). Settable entities send a SET on change and also track GET/SET replies on the bus, so changes made elsewhere (Oview, another client) are reflected immediately. A param the controller doesn't support shows as unavailable.
 
