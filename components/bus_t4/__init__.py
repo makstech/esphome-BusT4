@@ -38,7 +38,7 @@ CONFIG_TYPES = {
     "disable_internal_radio": (0x9B, "Disable internal radio", "mdi:radio-off"),  # on = radio off
     "slave": (0x98, "Slave mode", "mdi:link-variant"),
     "automation_lock": (0x9A, "Automation lock", "mdi:lock-outline"),
-    "button_lock": (0x9C, "Button lock", "mdi:lock-pattern"),
+    "keylock": (0x9C, "Keylock", "mdi:key-variant"),
 }
 _FLAG_ENUM = {k: v[0] for k, v in CONFIG_TYPES.items()}
 
@@ -56,7 +56,8 @@ NUMBER_TYPES = {
     "always_close_time": (0x89, 0, 20, 1, "s", "Always-close time", "mdi:timer-outline", 1, 1),
     "standby_time": (0x8D, 5, 250, 1, "s", "Stand-by time", "mdi:timer-outline", 1, 1),
     "surge_time": (0x91, 1, 10, 0.1, "s", "Surge time", "mdi:timer-outline", 1, 0.1),
-    "pre_flash_time": (0x95, 1, 10, 1, "s", "Pre-flashing time", "mdi:timer-outline", 1, 1),
+    "pre_flash_open_time": (0x95, 1, 10, 1, "s", "Opening pre-flash time", "mdi:timer-outline", 1, 1),
+    "pre_flash_close_time": (0x99, 1, 10, 1, "s", "Closing pre-flash time", "mdi:timer-outline", 1, 1),
     "max_work_time": (0xA7, 10, 250, 1, "s", "Maximum work time", "mdi:timer-alert-outline", 1, 1),
     "courtesy_light_time": (0x5B, 0, 240, 1, "s", "Courtesy light time", "mdi:lightbulb-on-outline", 1, 1),
     "electric_lock_time": (0x5A, 0.1, 10, 0.1, "s", "Electric lock time", "mdi:lock-clock", 1, 0.1),

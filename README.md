@@ -239,7 +239,7 @@ bus_t4:
 | `disable_internal_radio` | Disable internal radio |
 | `slave` | Slave mode |
 | `automation_lock` | Automation lock |
-| `button_lock` | Button lock |
+| `keylock` | Keylock |
 <!-- END SWITCH_TYPES -->
 
 ##### `numbers` types (`number`)
@@ -257,7 +257,8 @@ bus_t4:
 | `always_close_time` | Always-close time | 0–20 s |
 | `standby_time` | Stand-by time | 5–250 s |
 | `surge_time` | Surge time | 1–10 s |
-| `pre_flash_time` | Pre-flashing time | 1–10 s |
+| `pre_flash_open_time` | Opening pre-flash time | 1–10 s |
+| `pre_flash_close_time` | Closing pre-flash time | 1–10 s |
 | `max_work_time` | Maximum work time | 10–250 s |
 | `courtesy_light_time` | Courtesy light time | 0–240 s |
 | `electric_lock_time` | Electric lock time | 0.1–10 s |
