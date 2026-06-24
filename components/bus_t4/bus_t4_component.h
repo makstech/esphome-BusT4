@@ -49,8 +49,14 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   // Register a device to receive packet callbacks
   void register_device(BusT4Device *device) { devices_.push_back(device); }
 
+  // When enabled, every received packet is logged with a classification guess so that
+  // unmapped BlueBus events (photocells, keypads) can be captured. See .agent/PROTOCOL.md.
+  void set_debug_unknown_packets(bool enable) { debug_unknown_packets_ = enable; }
+
  private:
   void rxTask();
+  // Log a received packet with a human-readable type guess (debug_unknown_packets).
+  void log_packet_classification(const T4Packet &packet);
   void txTask();
   static void rxTaskThunk(void *self) { static_cast<BusT4Component *>(self)->rxTask(); }
   static void txTaskThunk(void *self) { static_cast<BusT4Component *>(self)->txTask(); }
@@ -70,6 +76,8 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   EventGroupHandle_t requestEvent_ = nullptr;
 
   std::vector<BusT4Device *> devices_;
+
+  bool debug_unknown_packets_ = false;
 
   // Cached UART port for direct baud rate register writes during break signal.
   uart_port_t uart_num_ = UART_NUM_MAX;

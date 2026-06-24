@@ -66,6 +66,12 @@ void BusT4Component::loop() {
     // Ignore packets addressed TO ourselves that we sent (broadcast responses come TO us)
     // But accept packets where TO matches our address (responses to our requests)
 
+    // Optional capture aid: classify and log every packet so that unmapped BlueBus
+    // events can be identified from real hardware. See .agent/PROTOCOL.md.
+    if (debug_unknown_packets_) {
+      log_packet_classification(packet);
+    }
+
     // Dispatch to all registered devices
     for (auto *device : devices_) {
       device->on_packet(packet);
@@ -73,9 +79,60 @@ void BusT4Component::loop() {
   }
 }
 
+void BusT4Component::log_packet_classification(const T4Packet &packet) {
+  // Build a short human-readable guess at the packet type. This never decides behaviour;
+  // it only annotates the hex dump to help map photocell/keypad packets (PROTOCOL.md).
+  const char *label = "UNKNOWN (unmapped - capture candidate)";
+
+  if (packet.is_run_packet()) {
+    uint8_t cmd = packet.run_command_echo();
+    if (cmd != 0) {
+      // A command was executed (keypad / remote / hardwired input / our own ESP).
+      switch (cmd) {
+        case CMD_STEP: label = "COMMAND step-by-step"; break;
+        case CMD_STOP: label = "COMMAND stop"; break;
+        case CMD_OPEN: label = "COMMAND open"; break;
+        case CMD_CLOSE: label = "COMMAND close"; break;
+        case CMD_OPEN_PARTIAL_1: label = "COMMAND partial-1"; break;
+        case CMD_OPEN_PARTIAL_2: label = "COMMAND partial-2"; break;
+        case CMD_OPEN_PARTIAL_3: label = "COMMAND partial-3"; break;
+        default: label = "COMMAND (other)"; break;
+      }
+    } else {
+      label = "movement status (handled by cover)";
+    }
+  } else if (packet.is_dep() && packet.command() == STA) {
+    label = "STA position (handled by cover)";
+  } else if (packet.device() == RADIO) {
+    label = "OXI/RADIO event (remote control)";
+  } else if (packet.is_dmp()) {
+    if (packet.is_event_push()) {
+      label = "DMP EVT push (spontaneous notification)";
+    } else {
+      switch (packet.command()) {
+        case INF_STATUS: label = "DMP gate status (handled by cover)"; break;
+        case INF_IO: label = "DMP I/O diagnostics (0xD1)"; break;
+        case INF_DIAG_BB: label = "DMP BlueBus diagnostics (0xD0)"; break;
+        case INF_CUR_POS: label = "DMP position (handled by cover)"; break;
+        case INF_WHO: label = "DMP device discovery (handled by cover)"; break;
+        default: label = "DMP response"; break;
+      }
+    }
+  }
+
+  ESP_LOGI(TAG, "[pkt] %-42s from=0x%02X.%02X to=0x%02X.%02X dev=0x%02X cmd=0x%02X : %s",
+           label, packet.header.from.address, packet.header.from.endpoint,
+           packet.header.to.address, packet.header.to.endpoint,
+           packet.device(), packet.command(),
+           format_hex_pretty(packet.data, packet.size).c_str());
+}
+
 void BusT4Component::dump_config() {
   ESP_LOGCONFIG(TAG, "BusT4:");
   ESP_LOGCONFIG(TAG, "  Address: 0x%02X%02X", address_.address, address_.endpoint);
+  if (debug_unknown_packets_) {
+    ESP_LOGCONFIG(TAG, "  Debug unknown packets: enabled");
+  }
 }
 
 void BusT4Component::rxTask() {

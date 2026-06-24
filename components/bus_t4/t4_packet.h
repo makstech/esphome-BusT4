@@ -75,6 +75,7 @@ enum T4InfoCommand : uint8_t {
   INF_MAX_OPN = 0x12,    // Max encoder position
   INF_POS_MAX = 0x18,    // Open position
   INF_POS_MIN = 0x19,    // Close position
+  INF_DIAG_BB = 0xD0,    // Diagnostics of BlueBus devices (photocells, keypads)
   INF_IO = 0xD1,         // Input/output state (limit switches)
 
   // Configuration parameters (settable)
@@ -86,6 +87,18 @@ enum T4InfoCommand : uint8_t {
   CFG_PRE_FLASH = 0x85,  // Pre-flash warning - 0x00=off, 0x01=on
   CFG_CLOSE_SPEED = 0x90, // Close speed (0-100)
   CFG_OPEN_SPEED = 0x91,  // Open speed (0-100)
+};
+
+// Individual bits within the DMP flags byte (data[9]).
+// Decoded from gashtaan/firmware T4Flags; these compose the REQ_GET/REQ_SET/RSP_*
+// constants below (e.g. REQ_GET 0x99 = REQ|GET|ACK|FIN). See .agent/PROTOCOL.md §1.
+enum T4Flag : uint8_t {
+  T4_FLAG_FIN = 0x01,
+  T4_FLAG_ACK = 0x08,
+  T4_FLAG_GET = 0x10,
+  T4_FLAG_SET = 0x20,
+  T4_FLAG_EVT = 0x40,    // Spontaneous event / notification (not a request/response)
+  T4_FLAG_REQ = 0x80,    // Set on requests we send, cleared in the controller's reports
 };
 
 // Request types (byte 11)
@@ -144,6 +157,12 @@ enum T4OperationStatus : uint8_t {
   OP_STOPPED = 0x08,     // Movement stopped
 };
 
+// DEP command packet structure (message.command values)
+enum T4CommandPacket : uint8_t {
+  RUN = 0x82,  // Execute command
+  STA = 0xC0,  // Status during movement
+};
+
 struct T4Packet {
   uint8_t size = 0;
   union {
@@ -182,6 +201,36 @@ struct T4Packet {
     return h;
   }
 
+  // ---- Shared, bounds-aware accessors ----
+  // All offsets follow the canonical layout documented in .agent/PROTOCOL.md §1.
+  // is_dmp()/is_dep() also gate the minimum size so the field accessors below are safe.
+
+  bool is_dmp() const { return size >= 12 && header.protocol == DMP; }
+  bool is_dep() const { return size >= 10 && header.protocol == DEP; }
+
+  uint8_t device() const { return data[7]; }   // message.device (FOR_CU, FOR_OXI, ...)
+  uint8_t command() const { return data[8]; }   // message.command (INF id / RUN)
+
+  // DMP-only fields (valid when is_dmp())
+  uint8_t dmp_flags() const { return data[9]; }
+  uint8_t dmp_sequence() const { return data[10]; }
+  uint8_t dmp_status() const { return data[11]; }
+  bool is_event_push() const { return is_dmp() && (data[9] & T4_FLAG_EVT); }
+  const uint8_t *dmp_payload() const { return &data[12]; }
+  int dmp_payload_len() const { return static_cast<int>(size) - 12 - 1; }  // minus CRC2
+
+  // ---- Control-unit RUN packet (command execution report) ----
+  // The controller broadcasts these whenever a command is executed, whatever the source
+  // (BlueBus keypad, hardwired input, OXI remote, or our own ESP). See PROTOCOL.md §2.
+  // data[8] is RUN with the REQ bit cleared (0x82 & 0x7F = 0x02); 0x82 is also accepted.
+  bool is_run_packet() const {
+    return is_dep() && data[7] == FOR_CU && (data[8] == RUN || data[8] == (RUN & 0x7F));
+  }
+  // For a RUN packet: data[9] >= 0x80 means a command was issued; the command value is
+  // data[9] - 0x80 (CMD_STEP..CMD_OPEN_PARTIAL_3). data[9] < 0x80 is a movement status,
+  // for which this returns 0 (CMD_STEP..CMD_OPEN_PARTIAL_3 are all non-zero).
+  uint8_t run_command_echo() const { return data[9] >= 0x80 ? data[9] - 0x80 : 0; }
+
   T4Packet() = default;
   T4Packet(const T4Source to, const T4Source from, const T4Protocol protocol, uint8_t *messageData,
            const uint8_t messageSize) {
@@ -197,12 +246,6 @@ struct T4Packet {
 
     data[size - 1] = checksum(sizeof(header), messageSize);
   }
-};
-
-// DEP command packet structure
-enum T4CommandPacket : uint8_t {
-  RUN = 0x82,  // Execute command
-  STA = 0xC0,  // Status during movement
 };
 
 // Control commands (for RUN)
