@@ -18,7 +18,20 @@
 2. PHOTO_INTERVENTION read site.
 3. Whether the controller echoes our own commands (keypad event self-fire) → echo suppression.
 
+## Verification status (important)
+- `esphome config` (example.yaml + debug_yaml): **pass**.
+- Host unit test of the packet parser (`tests/test_t4_packet.cpp`): **pass** (zig c++).
+- ESPHome **codegen**: validated end-to-end — all four entities are constructed and wired in
+  the generated `main.cpp` (`set_event_types({...})` matches the emitted strings, set_parent/
+  set_address/etc. correct).
+- Full firmware **C++ compile**: NOT verified locally. The esp-idf build on this Czech-locale,
+  Python‑3.14 Windows box dies in platformio/esptool setup (UnicodeDecodeError on cp1250 bytes;
+  tool-esptoolpy packaging error) BEFORE reaching the bus_t4 sources — an environment bug, not a
+  code issue. CI (Ubuntu, Python 3.12, UTF‑8) is the designated compile gate and `esphome
+  compile example.yaml` there exercises all four platforms.
+
 ## Next action
-1. Push branch, open CI, confirm green (config + unit-tests + compile).
-2. Open PR against makstech/esphome-BusT4:main (additive feature; include capture format).
-3. Iterate photocell decode once Petr sends 0xD0 captures.
+1. Decision point: push branch to the user's fork + open PR vs. hand off (awaiting user go —
+   the local compile gate I set could not run for environment reasons).
+2. CI confirms the compile on push/PR.
+3. Iterate photocell 0xD0 decode once Petr sends captures (PROTOCOL.md §6).
