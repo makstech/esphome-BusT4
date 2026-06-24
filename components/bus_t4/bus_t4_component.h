@@ -46,6 +46,12 @@ class BusT4Component final : public Component, public uart::UARTDevice {
 
   T4Source get_address() const { return address_; }
 
+  // Address of the motor controller, shared across devices. Defaults to the common Nice
+  // endpoint {0x00, 0x03}; the cover updates it once discovery (INF_WHO) finds the unit,
+  // so other devices (e.g. photocell polling) don't each have to re-run discovery.
+  void set_controller_address(T4Source addr) { controller_address_ = addr; }
+  T4Source get_controller_address() const { return controller_address_; }
+
   // Register a device to receive packet callbacks
   void register_device(BusT4Device *device) { devices_.push_back(device); }
 
@@ -66,6 +72,7 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   void send_break();
 
   T4Source address_;
+  T4Source controller_address_{0x00, 0x03};
 
   TaskHandle_t rxTask_ = nullptr;
   TaskHandle_t txTask_ = nullptr;
