@@ -119,8 +119,11 @@ The RUN packet carries *which* command, not *who* issued it. A keypad "Open", a 
 "Open", and our own `cover.open` all look identical on the bus. Per the brief, user/source
 identification is out of scope (BlueBus carries only ~4 bits and the controller does not
 forward the origin). The keypad `event` entity therefore reports the **command**, and may
-also fire for our own ESP-issued commands. Optional mitigation (implemented): suppress an
-event if it arrives within a short window after we transmitted that same command.
+also fire for our own ESP-issued commands. Whether the controller actually echoes our own
+commands as a `>= 0x80` command echo (vs only as a `< 0x80` status) is itself unconfirmed —
+so echo-suppression is intentionally NOT implemented yet to avoid speculative code; a
+capture (open the gate from HA, watch for a duplicate `[pkt] COMMAND open`) will tell us
+whether it is needed.
 
 ---
 
