@@ -1,6 +1,6 @@
 #include "photocell.h"
 #include "esphome/core/log.h"
-#include "esphome/core/helpers.h"
+#include "esphome/core/helpers.h"  // format_hex_pretty
 
 namespace esphome::bus_t4 {
 
