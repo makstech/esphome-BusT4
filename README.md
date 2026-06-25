@@ -387,28 +387,31 @@ lock:
 
 ### Raw Configuration Parameters
 
-For on/off configuration flags (auto-close, standby, etc.), use the
-[Switch Platform](#switch-platform). For numeric parameters not yet covered by
-a platform, you can set any controller parameter by its raw hex address using
-`send_config_set()`:
+`send_config_set()` writes any controller parameter by its raw hex address — it's
+the same call the `number` and `switch` platforms make under the hood. A good way
+to get a feel for it is to drive a parameter you already have as a platform type,
+e.g. opening/closing speed (`0x42`/`0x43`, the params the `speed_opening` /
+`speed_closing` numbers wrap), and watch the built-in number track your changes:
 
 ```yaml
 number:
   - platform: template
-    name: "Installation speed"  # 0xCF, not exposed as a platform type
+    name: "Opening speed (raw)"   # 0x42 — same parameter as the speed_opening number
     min_value: 25
-    max_value: 50
+    max_value: 100
     set_action:
-      - lambda: 'id(gate).send_config_set(0xCF, (uint8_t)x);'
+      - lambda: 'id(gate).send_config_set(0x42, (uint8_t)x);'
 
   - platform: template
-    name: "Force operation time"  # 0x37 (ms)
-    min_value: 10
-    max_value: 500
-    step: 10
+    name: "Closing speed (raw)"   # 0x43
+    min_value: 25
+    max_value: 100
     set_action:
-      - lambda: 'id(gate).send_config_set(0x37, (uint16_t)x, 2);'  # 2-byte param
+      - lambda: 'id(gate).send_config_set(0x43, (uint8_t)x);'
 ```
+
+Multi-byte parameters take a width: `send_config_set(param, (uint16_t)x, 2)`. Find
+addresses with the `debug_request` action (below) or gashtaan's parameter table.
 
 ### Sending Commands for Debugging
 
