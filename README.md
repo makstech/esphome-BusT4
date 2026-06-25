@@ -40,7 +40,6 @@ Should work with any Nice controller that has a Bus-T4 port.
 
 **Device-specific features:**
 - **Walky gates**: Uses 1-byte position values (auto-detected)
-- **Robus gates**: Position queries disabled during movement (auto-detected)
 - **Road 400**: Alternate status codes supported (0x83/0x84)
 
 ## Quick Start
@@ -278,6 +277,7 @@ bus_t4_control_unit:
 | `slave` | Slave mode |
 | `automation_lock` | Automation lock |
 | `keylock` | Keylock |
+| `decelerations` | Decelerations |
 <!-- END SWITCH_TYPES -->
 
 ##### `numbers` types (`number`)
@@ -290,6 +290,12 @@ bus_t4_control_unit:
 | `speed_closing` | Speed (closing) | 25–100 % |
 | `force_opening` | Force (opening) | 0–100 % |
 | `force_closing` | Force (closing) | 0–100 % |
+| `decel_speed_opening` | Deceleration speed (opening) | 25–50 % |
+| `decel_speed_closing` | Deceleration speed (closing) | 25–50 % |
+| `decel_force_opening` | Deceleration force (opening) | 0–100 % |
+| `decel_force_closing` | Deceleration force (closing) | 0–100 % |
+| `decel_sensitivity_opening` | Deceleration sensitivity (opening) | 0–100 % |
+| `decel_sensitivity_closing` | Deceleration sensitivity (closing) | 0–100 % |
 | `maintenance_threshold` | Maintenance threshold | 100–20000 |
 | `photo_close_time` | Close after photo time | 0–250 s |
 | `always_close_time` | Always-close time | 0–20 s |
@@ -389,19 +395,19 @@ a platform, you can set any controller parameter by its raw hex address using
 ```yaml
 number:
   - platform: template
-    name: "Deceleration force (opening)"  # 0x4D, not exposed as a platform type
-    min_value: 0
-    max_value: 100
-    step: 5
-    set_action:
-      - lambda: 'id(gate).send_config_set(0x4D, (uint8_t)x);'
-
-  - platform: template
-    name: "Deceleration speed (opening)"  # 0x45
+    name: "Installation speed"  # 0xCF, not exposed as a platform type
     min_value: 25
     max_value: 50
     set_action:
-      - lambda: 'id(gate).send_config_set(0x45, (uint8_t)x);'
+      - lambda: 'id(gate).send_config_set(0xCF, (uint8_t)x);'
+
+  - platform: template
+    name: "Force operation time"  # 0x37 (ms)
+    min_value: 10
+    max_value: 500
+    step: 10
+    set_action:
+      - lambda: 'id(gate).send_config_set(0x37, (uint16_t)x, 2);'  # 2-byte param
 ```
 
 ### Sending Commands for Debugging

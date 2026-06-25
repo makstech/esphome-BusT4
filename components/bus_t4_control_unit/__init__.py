@@ -46,6 +46,7 @@ CONFIG_TYPES = {
     "slave": (0x98, "Slave mode", "mdi:link-variant"),
     "automation_lock": (0x9A, "Automation lock", "mdi:lock-outline"),
     "keylock": (0x9C, "Keylock", "mdi:key-variant"),
+    "decelerations": (0xA2, "Decelerations", "mdi:car-brake-hold"),
 }
 _FLAG_ENUM = {k: v[0] for k, v in CONFIG_TYPES.items()}
 
@@ -58,6 +59,12 @@ NUMBER_TYPES = {
     "speed_closing": (0x43, 25, 100, 1, "%", "Speed (closing)", "mdi:speedometer-medium", 1, 1),
     "force_opening": (0x4A, 0, 100, 1, "%", "Force (opening)", "mdi:arm-flex", 1, 1),
     "force_closing": (0x4B, 0, 100, 1, "%", "Force (closing)", "mdi:arm-flex-outline", 1, 1),
+    "decel_speed_opening": (0x45, 25, 50, 1, "%", "Deceleration speed (opening)", "mdi:speedometer-slow", 1, 1),
+    "decel_speed_closing": (0x46, 25, 50, 1, "%", "Deceleration speed (closing)", "mdi:speedometer-slow", 1, 1),
+    "decel_force_opening": (0x4D, 0, 100, 1, "%", "Deceleration force (opening)", "mdi:arm-flex", 1, 1),
+    "decel_force_closing": (0x4E, 0, 100, 1, "%", "Deceleration force (closing)", "mdi:arm-flex-outline", 1, 1),
+    "decel_sensitivity_opening": (0x3D, 0, 100, 1, "%", "Deceleration sensitivity (opening)", "mdi:car-brake-alert", 1, 1),
+    "decel_sensitivity_closing": (0x3E, 0, 100, 1, "%", "Deceleration sensitivity (closing)", "mdi:car-brake-alert", 1, 1),
     "maintenance_threshold": (0xB1, 100, 20000, 100, "", "Maintenance threshold", "mdi:wrench-clock", 4, 1),
     "photo_close_time": (0x85, 0, 250, 1, "s", "Close after photo time", "mdi:timer-outline", 1, 1),
     "always_close_time": (0x89, 0, 20, 1, "s", "Always-close time", "mdi:timer-outline", 1, 1),

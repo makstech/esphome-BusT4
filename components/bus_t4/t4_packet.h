@@ -89,6 +89,7 @@ enum T4InfoCommand : uint8_t {
   CFG_PRE_FLASH = 0x94,   // Pre-flashing
   CFG_SLAVE = 0x98,        // Slave mode
   CFG_DISABLE_RADIO = 0x9B, // Disable internal radio (on = internal radio off)
+  CFG_DECELERATIONS = 0xA2, // Deceleration phase enable
 
   // Speed parameters (numeric, 25-100)
   CFG_OPEN_SPEED = 0x42,  // Opening speed
