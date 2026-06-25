@@ -3,9 +3,18 @@
 #include <vector>
 #include "esphome/components/select/select.h"
 #include "esphome/core/component.h"
-#include "bus_t4.h"
+#include "esphome/components/bus_t4/bus_t4.h"
 
-namespace esphome::bus_t4 {
+namespace esphome::bus_t4_control_unit {
+
+// bus_t4 vocabulary this entity uses:
+using bus_t4::BusT4Device;
+using bus_t4::T4Packet;
+using enum bus_t4::T4Protocol;
+using enum bus_t4::T4Target;
+using enum bus_t4::T4RequestType;
+using enum bus_t4::T4ResponseType;
+using enum bus_t4::T4Error;
 
 // Exposes an enumerated control-unit parameter (e.g. step-by-step mode) as a
 // Home Assistant select. The controller speaks raw byte values; option_values_
@@ -32,4 +41,4 @@ class BusT4Select : public select::Select, public BusT4Device, public Component 
   bool has_pending_{false};
 };
 
-} // namespace esphome::bus_t4
+} // namespace esphome::bus_t4_control_unit

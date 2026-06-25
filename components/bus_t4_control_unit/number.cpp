@@ -1,23 +1,23 @@
-#include "switch.h"
+#include "number.h"
 #include "esphome/core/log.h"
-#include "t4_packet.h"
+#include "esphome/components/bus_t4/t4_packet.h"
 
-namespace esphome::bus_t4 {
+#include <cmath>
 
-static const char *const TAG = "bus_t4.switch";
+namespace esphome::bus_t4_control_unit {
+
+static const char *const TAG = "bus_t4.number";
 
 // DMP payload starts after the header (7 bytes) + message header (5 bytes).
 static constexpr uint8_t DATA_OFFSET = 12;
 
-void BusT4Switch::setup() {
-  // Send a GET request and block until the controller responds.
+void BusT4Number::setup() {
   uint8_t message[5] = {FOR_CU, this->param_, REQ_GET, 0x00, 0x00};
   T4Packet rsp;
 
   if (this->parent_->dmp_request(this->target_address_, message, sizeof(message), &rsp, 500)) {
-    if (rsp.message.dmp.status == ERR_NONE && rsp.size >= DATA_OFFSET + 2) {
-      bool state = rsp.data[DATA_OFFSET] != 0x00;
-      this->publish_state(state);
+    if (rsp.message.dmp.status == ERR_NONE && rsp.size >= DATA_OFFSET + this->width_ + 1) {
+      this->publish_state(t4_read_be(rsp, DATA_OFFSET, this->width_) * this->scale_);
     } else if (rsp.message.dmp.status == ERR_UNSUPPORTED) {
       this->mark_failed(LOG_STR("parameter not supported by controller"));
     }
@@ -26,14 +26,15 @@ void BusT4Switch::setup() {
   }
 }
 
-void BusT4Switch::write_state(bool state) {
-  ESP_LOGD(TAG, "Setting config 0x%02X to %s", this->param_, state ? "ON" : "OFF");
-  this->pending_state_ = state;
+void BusT4Number::control(float value) {
+  uint32_t v = static_cast<uint32_t>(lroundf(value / this->scale_));
+  ESP_LOGD(TAG, "Setting config 0x%02X to %u", this->param_, v);
+  this->pending_value_ = v;
   this->has_pending_ = true;
-  this->send_config_set(this->param_, state ? 0x01 : 0x00);
+  this->send_config_set(this->param_, v, this->width_);
 }
 
-void BusT4Switch::on_packet(const T4Packet &packet) {
+void BusT4Number::on_packet(const T4Packet &packet) {
   if (packet.header.protocol != DMP)
     return;
   if (packet.message.command != this->param_)
@@ -43,9 +44,9 @@ void BusT4Switch::on_packet(const T4Packet &packet) {
 
   // Another client's SET request — stash the value, wait for confirmation.
   if (flags == REQ_SET) {
-    if (packet.size < DATA_OFFSET + 2)
+    if (packet.size < DATA_OFFSET + this->width_ + 1)
       return;
-    this->pending_state_ = packet.data[DATA_OFFSET] != 0x00;
+    this->pending_value_ = t4_read_be(packet, DATA_OFFSET, this->width_);
     this->has_pending_ = true;
     return;
   }
@@ -56,24 +57,21 @@ void BusT4Switch::on_packet(const T4Packet &packet) {
   // SET confirmed — publish the pending value (ours or another client's).
   if (flags == RSP_SET_COMPLETE && this->has_pending_) {
     this->has_pending_ = false;
-    ESP_LOGD(TAG, "Config 0x%02X confirmed %s", this->param_, this->pending_state_ ? "ON" : "OFF");
-    this->publish_state(this->pending_state_);
+    this->publish_state(this->pending_value_ * this->scale_);
     return;
   }
 
   // GET response — parse the value directly.
   if (flags == RSP_GET_COMPLETE) {
-    if (packet.size < DATA_OFFSET + 2)
+    if (packet.size < DATA_OFFSET + this->width_ + 1)
       return;
-    bool state = packet.data[DATA_OFFSET] != 0x00;
-    ESP_LOGD(TAG, "Config 0x%02X reported %s", this->param_, state ? "ON" : "OFF");
-    this->publish_state(state);
+    this->publish_state(t4_read_be(packet, DATA_OFFSET, this->width_) * this->scale_);
   }
 }
 
-void BusT4Switch::dump_config() {
-  LOG_SWITCH("", "Bus T4 Switch", this);
+void BusT4Number::dump_config() {
+  LOG_NUMBER("", "Bus T4 Number", this);
   ESP_LOGCONFIG(TAG, "  Config param: 0x%02X", this->param_);
 }
 
-} // namespace esphome::bus_t4
+} // namespace esphome::bus_t4_control_unit

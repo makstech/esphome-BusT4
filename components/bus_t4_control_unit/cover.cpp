@@ -1,11 +1,12 @@
 #include "cover.h"
+#include "bus_t4_control_unit.h"
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
 #include <cmath>
 #include <string>
 #include <algorithm>
 
-namespace esphome::bus_t4 {
+namespace esphome::bus_t4_control_unit {
 
 static const char *TAG = "bus_t4.cover";
 
@@ -192,19 +193,6 @@ void BusT4Cover::control(const cover::CoverCall &call) {
 }
 
 void BusT4Cover::on_packet(const T4Packet &packet) {
-  // Check if this is an OXI receiver packet (remote control)
-  // These packets have target FOR_OXI (0x0A) in byte 9
-  if (packet.size >= 14 && packet.data[9] == FOR_OXI) {
-    parse_oxi_packet(packet);
-    return;
-  }
-
-  // During initialization, accept packets from any source (for device discovery)
-  // After init, only process packets from our target controller
-  if (init_ok_ && packet.header.from != target_address_) {
-    return;
-  }
-
   ESP_LOGV(TAG, "Received packet from 0x%02X.%02X, protocol=%d",
            packet.header.from.address, packet.header.from.endpoint, packet.header.protocol);
 
@@ -604,66 +592,15 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
   }
 }
 
-void BusT4Cover::parse_oxi_packet(const T4Packet &packet) {
-  // OXI receiver packets contain remote control information
-  // OXI packet format:
-  //   data[9] = FOR_OXI (0x0A)
-  //   data[10] = command (0x25 = remote list, 0x26 = button read)
-  //   data[11] = subcommand
-  //   data[12] = sequence/length
-  //   data[13] = status
-  //   data[14+] = payload
-
-  if (packet.size < 15) return;
-
-  uint8_t command = packet.data[10];
-  uint8_t subcommand = packet.data[11];
-  uint8_t sequence = packet.data[12];
-  uint8_t status = packet.data[13];
-
-  // Only process successful responses
-  if (status != ERR_NONE) {
-    return;
-  }
-
-  // Payload starts at data[14]
-  const uint8_t* payload = &packet.data[14];
-
-  // Remote control list packet (0x25)
-  // Contains info about a remote that triggered an action
-  if (command == OXI_REMOTE_LIST && subcommand == 0x01 && sequence == 0x0A) {
-    // Remote serial number (4 bytes, little endian)
-    uint32_t remote_serial = (payload[5] << 24) | (payload[4] << 16) | (payload[3] << 8) | payload[2];
-    uint8_t remote_command = payload[8] >> 4;  // High nibble
-    uint8_t remote_button = payload[5] >> 4;   // High nibble of byte 5
-    uint8_t remote_mode = payload[7] + 1;
-    uint8_t press_count = payload[6];
-
-    ESP_LOGI(TAG, "Remote: serial=%08X, cmd=%d, btn=%d, mode=%d, presses=%d",
-             remote_serial, remote_command, remote_button, remote_mode, press_count);
-  }
-
-  // Button read packet (0x26, 0x41)
-  // Direct button press detection
-  if (command == OXI_BUTTON_READ && subcommand == 0x41 && sequence == 0x08) {
-    uint8_t button = payload[0] >> 4;  // High nibble
-    uint32_t remote_serial = (payload[0] & 0x0F) | (payload[1] << 4) | (payload[2] << 12) | (payload[3] << 20);
-
-    ESP_LOGI(TAG, "Button press: btn=%d, remote=%05X", button, remote_serial);
-  }
-}
-
 void BusT4Cover::init_device() {
   // State machine for gradual initialization
   // Each call advances one step to avoid flooding the bus
 
   switch (init_step_) {
     case 0:
-      // Wait for the component's bus discovery, then take the controller's
-      // product (drives device-specific behavior) and OXI presence from it.
-      if (!parent_->discovery_ready())
+      if (cu_ == nullptr || !cu_->identity_ready())
         break;
-      if (parent_->product().find(PRODUCT_WALKY) == 0) {
+      if (cu_->product().find(PRODUCT_WALKY) == 0) {
         is_walky_ = true;
         ESP_LOGI(TAG, "Detected Walky device - using 1-byte position mode");
       }
@@ -906,4 +843,4 @@ uint32_t BusT4Cover::get_discovery_interval() const {
   return intervals[idx];
 }
 
-} // namespace esphome::bus_t4
+} // namespace esphome::bus_t4_control_unit

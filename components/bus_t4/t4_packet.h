@@ -20,6 +20,8 @@
 #include <algorithm>
 #include <cstdint>
 
+namespace esphome::bus_t4 {
+
 static constexpr uint8_t T4_BREAK = 0x00;
 static constexpr uint8_t T4_SYNC = 0x55;
 
@@ -244,3 +246,5 @@ enum T4Command : uint8_t {
   CMD_RELEASE_AND_OPEN = 0x19,
   CMD_RELEASE_AND_CLOSE = 0x1A,
 };
+
+}  // namespace esphome::bus_t4

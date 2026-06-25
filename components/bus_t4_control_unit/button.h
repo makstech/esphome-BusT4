@@ -2,9 +2,12 @@
 
 #include "esphome/components/button/button.h"
 #include "esphome/core/component.h"
-#include "bus_t4.h"
+#include "esphome/components/bus_t4/bus_t4.h"
 
-namespace esphome::bus_t4 {
+namespace esphome::bus_t4_control_unit {
+
+// bus_t4 vocabulary this entity uses:
+using bus_t4::BusT4Device;
 
 // Writes a fixed value to a control-unit parameter on press (e.g. reset the
 // maintenance counter). One-shot; no state.
@@ -22,4 +25,4 @@ class BusT4Button : public button::Button, public BusT4Device, public Component 
   uint8_t value_{1};
 };
 
-} // namespace esphome::bus_t4
+} // namespace esphome::bus_t4_control_unit

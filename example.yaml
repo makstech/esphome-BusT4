@@ -3,7 +3,14 @@
 
 esphome:
   name: gate
-  friendly_name: Gate
+  friendly_name: "Nice BusT4"   # the bridge/node device; gate + OXI sit under it
+  # Group entities into Home Assistant sub-devices. The cover (empty name) inherits
+  # its device name, so it shows as "Gate" rather than "Gate <cover name>".
+  devices:
+    - id: cu_dev
+      name: "Gate"
+    - id: oxi_dev
+      name: "OXI receiver"
 
 esp32:
   board: esp32dev
@@ -65,77 +72,72 @@ uart:
   rx_pin: GPIO18
   baud_rate: 19200
 
-# One control_unit block creates the gate cover and its config-flag switches.
-# A flag entry is a bare type ("auto_close") or a map with name/icon overrides.
-# Toggling a flag sends a SET; it also tracks GET/SET replies on the bus, so
-# changes made via Oview or another client are reflected immediately.
+# Layered model: the bus is the transport; devices on the bus declare entities.
+#   uart -> bus_t4 (transport) -> bus_t4_control_unit / bus_t4_oxi (devices) -> entities
 bus_t4:
   id: bus
-  control_unit:
-    name: "Gate"
-    cover:
-      name: "Gate"
-      id: gate
-      auto_learn_timing: true
-      open_duration: 20s
-      close_duration: 20s
-      position_report_interval: 1s
-    flags:
-      - type: auto_close
-        name: "Auto-Close"
-        icon: "mdi:timer"
-      - type: photo_close
-        name: "Photo-Close"
-        icon: "mdi:motion-sensor"
-      - type: always_close
-        name: "Always Close"
-        icon: "mdi:lock"
-      - type: standby
-        name: "Standby Mode"
-        icon: "mdi:power-standby"
-      - type: surge
-        name: "Surge"
-        icon: "mdi:rocket-launch"
-      - type: pre_flash
-        name: "Pre-Flash Warning"
-        icon: "mdi:alarm-light"
-      - type: disable_internal_radio
-        name: "Disable Internal Radio"
-        icon: "mdi:radio-off"
-      - type: slave
-        name: "Slave Mode"
-        icon: "mdi:link-variant"
-    # Numeric params (range + unit come from the controller)
-    numbers: [pause_time]
-    diagnostics: true   # firmware/product/hardware/description text_sensors
+  diagnostics: true   # bus link health: error + timeout counters (on the node)
 
-# Optional: Additional buttons for partial opening
+# The control unit creates the gate cover and its config entities, and reads the
+# controller identity. A flag entry is a bare type ("auto_close") or a map with
+# name/icon overrides. Toggling a flag sends a SET and also tracks GET/SET replies
+# on the bus, so changes made via Oview or another client are reflected immediately.
+bus_t4_control_unit:
+  bus_t4_id: bus
+  device: cu_dev
+  cover:
+    id: gate            # name defaults to "" -> inherits the device name ("Gate")
+    auto_learn_timing: true
+    open_duration: 20s
+    close_duration: 20s
+    position_report_interval: 1s
+  flags:
+    - auto_close
+    - photo_close
+    - always_close
+    - standby
+    - surge
+    - pre_flash
+    - { type: disable_internal_radio, name: "Radio off", icon: "mdi:radio-off" }
+  # Numeric params (range + unit come from the controller)
+  numbers: [pause_time, speed_opening, speed_closing, force_opening, force_closing]
+  diagnostics: true     # control-unit identity: firmware / product / hardware / description
+
+# Optional: the OXI plug-in radio receiver as its own device (identity sensors).
+bus_t4_oxi:
+  bus_t4_id: bus
+  device: oxi_dev
+
+# Optional: additional buttons for partial opening (grouped under the gate device)
 button:
   - platform: template
     name: "Partial Open 1"
+    device_id: cu_dev
     icon: "mdi:gate-arrow-right"
     on_press:
-      - lambda: id(gate).send_cmd(CMD_OPEN_PARTIAL_1);
+      - lambda: id(gate).send_cmd(bus_t4::CMD_OPEN_PARTIAL_1);
 
   - platform: template
     name: "Partial Open 2"
+    device_id: cu_dev
     icon: "mdi:gate-arrow-right"
     on_press:
-      - lambda: id(gate).send_cmd(CMD_OPEN_PARTIAL_2);
+      - lambda: id(gate).send_cmd(bus_t4::CMD_OPEN_PARTIAL_2);
 
   - platform: template
     name: "Step-by-Step"
+    device_id: cu_dev
     icon: "mdi:gate"
     on_press:
-      - lambda: id(gate).send_cmd(CMD_STEP);
+      - lambda: id(gate).send_cmd(bus_t4::CMD_STEP);
 
 # Security lock using IT4WIFI device identity
 lock:
   - platform: template
-    name: "Gate Lock"
+    name: "Lock"
+    device_id: cu_dev
     optimistic: true
     on_lock:
-      - lambda: 'id(gate).send_cmd(CMD_BLOCK, IT4WIFI);'
+      - lambda: 'id(gate).send_cmd(bus_t4::CMD_BLOCK, bus_t4::IT4WIFI);'
     on_unlock:
-      - lambda: 'id(gate).send_cmd(CMD_RELEASE, IT4WIFI);'
-
+      - lambda: 'id(gate).send_cmd(bus_t4::CMD_RELEASE, bus_t4::IT4WIFI);'

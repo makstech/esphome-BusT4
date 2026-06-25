@@ -1,8 +1,8 @@
 #include "select.h"
 #include "esphome/core/log.h"
-#include "t4_packet.h"
+#include "esphome/components/bus_t4/t4_packet.h"
 
-namespace esphome::bus_t4 {
+namespace esphome::bus_t4_control_unit {
 
 static const char *const TAG = "bus_t4.select";
 
@@ -87,4 +87,4 @@ void BusT4Select::dump_config() {
   ESP_LOGCONFIG(TAG, "  Config param: 0x%02X", this->param_);
 }
 
-} // namespace esphome::bus_t4
+} // namespace esphome::bus_t4_control_unit

@@ -2,10 +2,28 @@
 
 #include "esphome/components/cover/cover.h"
 #include "esphome/core/preferences.h"
-#include "bus_t4.h"
+#include "esphome/components/bus_t4/bus_t4.h"
 #include <string>
 
-namespace esphome::bus_t4 {
+namespace esphome::bus_t4_control_unit {
+
+// bus_t4 vocabulary this entity uses:
+using bus_t4::BusT4Device;
+using bus_t4::T4Packet;
+using bus_t4::T4MotorType;
+using enum bus_t4::T4MotorType;
+using enum bus_t4::T4Protocol;
+using enum bus_t4::T4Target;
+using enum bus_t4::T4RequestType;
+using enum bus_t4::T4ResponseType;
+using enum bus_t4::T4Error;
+using enum bus_t4::T4Command;
+using enum bus_t4::T4CommandPacket;
+using enum bus_t4::T4InfoCommand;
+using enum bus_t4::T4GateStatus;
+using enum bus_t4::T4OperationStatus;
+
+class BusT4ControlUnit;
 
 // Position update interval during movement (ms)
 static constexpr uint32_t POSITION_UPDATE_INTERVAL = 500;
@@ -50,6 +68,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   void set_close_duration(uint32_t duration) { close_duration_ = duration; }
   void set_auto_learn_timing(bool enable) { auto_learn_timing_ = enable; }
   void set_position_report_interval(uint32_t interval) { position_report_interval_ = interval; }
+  void set_control_unit(BusT4ControlUnit *cu) { cu_ = cu; }
 
  protected:
   void control(const cover::CoverCall &call) override;
@@ -58,7 +77,6 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   // Parse different packet types
   void parse_dep_packet(const T4Packet &packet);
   void parse_dmp_packet(const T4Packet &packet);
-  void parse_oxi_packet(const T4Packet &packet);  // OXI receiver (remote control)
 
   // Request current position from controller
   void request_position();
@@ -78,6 +96,8 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   uint8_t init_step_{0};  // Initialization state machine step
   uint8_t discovery_attempts_{0};  // Discovery retry counter for exponential backoff
   uint32_t get_discovery_interval() const;  // Get current discovery retry interval
+
+  BusT4ControlUnit *cu_{nullptr};
 
   // Walky gates report 1-byte position values (derived from the product string).
   bool is_walky_{false};
@@ -137,4 +157,4 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   cover::CoverOperation last_operation_{cover::COVER_OPERATION_IDLE};
 };
 
-} // namespace esphome::bus_t4
+} // namespace esphome::bus_t4_control_unit

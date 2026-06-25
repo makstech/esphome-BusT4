@@ -79,8 +79,12 @@ void BusT4Component::dispatch_packet_(const T4Packet &packet) {
     ESP_LOGV(TAG, "Ignoring TX echo");
     return;
   }
+  // Route by the message's target role: FOR_ALL fans out to everyone, otherwise
+  // only devices that registered for that role (FOR_CU entities vs the OXI).
+  auto role = static_cast<T4Target>(packet.message.device);
   for (auto *device : devices_)
-    device->on_packet(packet);
+    if (role == FOR_ALL || device->role() == role)
+      device->on_packet(packet);
 }
 
 void BusT4Component::set_controller_address(T4Source addr) {
@@ -88,7 +92,7 @@ void BusT4Component::set_controller_address(T4Source addr) {
     device->on_controller_resolved(addr);
 }
 
-std::string BusT4Component::fetch_string_(T4Source to, uint8_t info_cmd) {
+std::string BusT4Component::fetch_string(T4Source to, uint8_t info_cmd) {
   uint8_t msg[5] = {FOR_ALL, info_cmd, REQ_GET, 0x00, 0x00};
   T4Packet reply;
   if (!this->dmp_request(to, msg, sizeof(msg), &reply, 500))
@@ -146,50 +150,18 @@ void BusT4Component::discover_() {
   }
   this->set_controller_address(controller_address_);
 
-  if (!found)
-    return;
-
-  manufacturer_ = fetch_string_(controller_address_, INF_MAN);
-  product_ = fetch_string_(controller_address_, INF_PRD);
-  firmware_ = fetch_string_(controller_address_, INF_FRM);
-  hardware_ = fetch_string_(controller_address_, INF_HWR);
-  description_ = fetch_string_(controller_address_, INF_DSC);
-  ESP_LOGI(TAG, "Identity: %s %s hw=%s fw=%s (%s)", manufacturer_.c_str(), product_.c_str(),
-           hardware_.c_str(), firmware_.c_str(), description_.c_str());
-  if (product_sensor_ != nullptr && !product_.empty())
-    product_sensor_->publish_state(product_);
-  if (firmware_sensor_ != nullptr && !firmware_.empty())
-    firmware_sensor_->publish_state(firmware_);
-  if (hardware_sensor_ != nullptr && !hardware_.empty())
-    hardware_sensor_->publish_state(hardware_);
-  if (description_sensor_ != nullptr && !description_.empty())
-    description_sensor_->publish_state(description_);
-
-  if (has_oxi_) {
-    oxi_product_ = fetch_string_(oxi_address_, INF_PRD);
-    oxi_hardware_ = fetch_string_(oxi_address_, INF_HWR);
-    oxi_firmware_ = fetch_string_(oxi_address_, INF_FRM);
-    ESP_LOGI(TAG, "OXI identity: %s hw=%s fw=%s", oxi_product_.c_str(), oxi_hardware_.c_str(),
-             oxi_firmware_.c_str());
-    if (oxi_product_sensor_ != nullptr && !oxi_product_.empty())
-      oxi_product_sensor_->publish_state(oxi_product_);
-    if (oxi_hardware_sensor_ != nullptr && !oxi_hardware_.empty())
-      oxi_hardware_sensor_->publish_state(oxi_hardware_);
-    if (oxi_firmware_sensor_ != nullptr && !oxi_firmware_.empty())
-      oxi_firmware_sensor_->publish_state(oxi_firmware_);
-  }
-  discovered_ = true;
+  if (found)
+    discovered_ = true;
 }
 
 void BusT4Component::dump_config() {
   ESP_LOGCONFIG(TAG, "BusT4:");
   ESP_LOGCONFIG(TAG, "  Address: 0x%02X%02X", address_.address, address_.endpoint);
   if (discovered_) {
-    ESP_LOGCONFIG(TAG, "  Controller: 0x%02X.%02X %s %s", controller_address_.address,
-                  controller_address_.endpoint, product_.c_str(), firmware_.c_str());
+    ESP_LOGCONFIG(TAG, "  Controller: 0x%02X.%02X", controller_address_.address,
+                  controller_address_.endpoint);
     if (has_oxi_)
-      ESP_LOGCONFIG(TAG, "  OXI: 0x%02X.%02X %s %s", oxi_address_.address, oxi_address_.endpoint,
-                    oxi_product_.c_str(), oxi_firmware_.c_str());
+      ESP_LOGCONFIG(TAG, "  OXI: 0x%02X.%02X", oxi_address_.address, oxi_address_.endpoint);
   } else {
     ESP_LOGCONFIG(TAG, "  Controller: not discovered");
   }

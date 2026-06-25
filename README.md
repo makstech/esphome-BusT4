@@ -111,20 +111,21 @@ external_components:
   - source:
       type: git
       url: https://github.com/makstech/esphome-BusT4
-    components: [bus_t4]
+    components: [bus_t4, bus_t4_control_unit, bus_t4_oxi]
 
 uart:
   tx_pin: GPIO21
   rx_pin: GPIO18
   baud_rate: 19200
 
+# Layered model: uart -> bus_t4 (transport) -> device(s) on the bus -> entities
 bus_t4:
   id: bus
-  control_unit:
-    name: "Gate"
-    cover:
-      name: "Gate"
-      id: gate
+
+bus_t4_control_unit:
+  bus_t4_id: bus
+  cover:
+    id: gate    # name defaults to "" -> inherits the device/node name (here, "Gate")
 ```
 
 > **Note**: The `minimum_chip_revision: "3.1"` setting is specific to the Nice BiDi-WiFi module (ESP32 rev3.1). It reduces binary size by excluding legacy workaround code. Safe to use with OTA updates — if the chip revision doesn't match, ESPHome will reject the firmware and automatically roll back. Remove or adjust for custom ESP32 hardware. See [ESPHome ESP32 advanced configuration](https://esphome.io/components/esp32/#advanced-configuration) for details.
@@ -140,68 +141,94 @@ esphome run gate.yaml
 ### Full Example
 
 ```yaml
+esphome:
+  name: gate
+  friendly_name: "Nice BusT4"   # the bridge/node device
+  # Optional: group entities into Home Assistant sub-devices. An entity with an
+  # empty name inherits its device's name, so the cover shows as just "Gate".
+  devices:
+    - id: cu_dev
+      name: "Gate"
+    - id: oxi_dev
+      name: "OXI receiver"
+
 external_components:
   - source:
       type: git
       url: https://github.com/makstech/esphome-BusT4
-    components: [bus_t4]
+    components: [bus_t4, bus_t4_control_unit, bus_t4_oxi]
 
 uart:
   tx_pin: GPIO21
   rx_pin: GPIO18
   baud_rate: 19200
 
+# The bus is the transport. Devices on the bus declare entities.
 bus_t4:
   id: bus
-  address: 0x5090  # Optional: this ESP module's own bus address
-  control_unit:
-    name: "Gate"
-    cover:
-      name: "Gate"
-      id: gate
-      auto_learn_timing: true       # Auto-learn open/close duration
-      open_duration: 20s            # Initial/fallback open time
-      close_duration: 20s           # Initial/fallback close time
-      position_report_interval: 1s  # Position update rate
-    # Config flags: bare type, or a map with name/icon overrides
-    flags:
-      - auto_close
-      - photo_close
-      - type: surge
-        name: "Starting torque"
-        icon: "mdi:flash"
+  address: 0x5090   # Optional: this ESP module's own bus address
+  diagnostics: true # Optional: bus link-health sensors (errors / timeouts)
 
-# Optional: Additional control buttons
+bus_t4_control_unit:
+  bus_t4_id: bus
+  device: cu_dev    # group this block's entities under the "Gate" device
+  cover:
+    id: gate                      # name defaults to "" -> inherits the device name ("Gate")
+    auto_learn_timing: true       # Auto-learn open/close duration
+    open_duration: 20s            # Initial/fallback open time
+    close_duration: 20s           # Initial/fallback close time
+    position_report_interval: 1s  # Position update rate
+  # Config flags: bare type, or a map with name/icon overrides
+  flags:
+    - auto_close
+    - photo_close
+    - type: surge
+      name: "Starting torque"
+      icon: "mdi:flash"
+  numbers: [pause_time, speed_opening, speed_closing]
+  diagnostics: true   # controller identity: firmware / product / hardware / description
+
+# Optional: the OXI plug-in radio receiver as its own device
+bus_t4_oxi:
+  bus_t4_id: bus
+  device: oxi_dev
+
+# Optional: additional control buttons (grouped under the gate device).
+# Protocol enums live in the bus_t4 namespace, so qualify them in lambdas.
 button:
   - platform: template
     name: "Partial Open"
+    device_id: cu_dev
     icon: "mdi:gate-arrow-right"
     on_press:
-      - lambda: id(gate).send_cmd(CMD_OPEN_PARTIAL_1);
+      - lambda: id(gate).send_cmd(bus_t4::CMD_OPEN_PARTIAL_1);
 
   - platform: template
     name: "Step-by-Step"
+    device_id: cu_dev
     icon: "mdi:gate"
     on_press:
-      - lambda: id(gate).send_cmd(CMD_STEP);
+      - lambda: id(gate).send_cmd(bus_t4::CMD_STEP);
 ```
 
 ### Configuration Variables
 
-#### bus_t4 Component
+The component is layered like `uart → modbus → modbus_controller`: a `bus_t4`
+transport, with one or more devices declared on it.
+
+#### bus_t4 (transport)
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
+| `id` | id | — | Referenced by the device components via `bus_t4_id` |
 | `address` | hex | `0x5090` | This ESP module's own bus address (the `from` field) |
-| `control_unit` | block | — | The motor controller and its entities (see below) |
-| `bus_diagnostics` | bool/map | — | `true` adds Bus-T4 link health sensors: frame errors and request timeouts |
-| `oxi` | bool/map | — | `true` adds OXI radio-receiver product/hardware/firmware diagnostic sensors. A map can rename them or set `device:` (a device from `esphome: devices:`) to group them as a separate HA device |
+| `diagnostics` | bool/map | — | `true` adds bus link-health sensors (`Errors`, `Timeouts`); a map renames them |
 
-#### control_unit
+#### bus_t4_control_unit (device)
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `name` | string | — | Name prefix for auto-created entities |
+| `bus_t4_id` | id | *auto* | The `bus_t4` to attach to |
 | `device` | id | — | A device declared in `esphome: devices:` — all of this block's entities are grouped under it as one HA device (set once, no per-entity `device_id`) |
 | `address` | hex | *auto* | Controller address override; auto-detected via `INF_WHO` when omitted |
 | `cover` | block | — | The gate cover (options below) |
@@ -214,18 +241,26 @@ button:
 
 Every `flags`/`numbers`/`selects`/`sensors`/`buttons` entry is a bare type name **or** a map with per-entity overrides (`name`, `icon`, `id`, …). Settable entities send a SET on change and also track GET/SET replies on the bus, so changes made elsewhere (Oview, another client) are reflected immediately. A param the controller doesn't support shows as unavailable.
 
-`cover` options: `name` (*required*), `auto_learn_timing` (`true`), `open_duration` (`20s`), `close_duration` (`20s`), `position_report_interval` (`1s`).
+`cover` options: `name` (defaults to `""`, which makes the cover inherit its device name), `auto_learn_timing` (`true`), `open_duration` (`20s`), `close_duration` (`20s`), `position_report_interval` (`1s`).
+
+#### bus_t4_oxi (device)
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `bus_t4_id` | id | *auto* | The `bus_t4` to attach to |
+| `device` | id | — | Group the OXI sensors under this `esphome: devices:` device |
+| `product` / `hardware` / `firmware` | string/map | *default names* | OXI radio-receiver identity text sensors |
 
 ```yaml
 bus_t4:
   id: bus
-  control_unit:
-    name: "Gate"
-    flags: [photo_close, auto_close]
-    numbers: [pause_time, standby_time]
-    selects: [step_by_step, standby_mode]
-    sensors: [total_maneuvers]
-    buttons: [reset_maintenance]
+bus_t4_control_unit:
+  bus_t4_id: bus
+  flags: [photo_close, auto_close]
+  numbers: [pause_time, standby_time]
+  selects: [step_by_step, standby_mode]
+  sensors: [total_maneuvers]
+  buttons: [reset_maintenance]
 ```
 
 ##### `flags` types (`switch`)
@@ -306,7 +341,7 @@ bus_t4:
 
 ### Available Commands
 
-Use in lambdas with `id(gate).send_cmd(COMMAND)`:
+Use in lambdas with `id(gate).send_cmd(bus_t4::COMMAND)` (the protocol enums live in the `bus_t4` namespace):
 
 | Command | Description |
 |---------|-------------|
@@ -320,7 +355,7 @@ Use in lambdas with `id(gate).send_cmd(COMMAND)`:
 
 ### Security Commands (Lock/Block)
 
-Security commands require the IT4WIFI device identity. Use `send_cmd(COMMAND, IT4WIFI)`:
+Security commands require the IT4WIFI device identity. Use `send_cmd(bus_t4::COMMAND, bus_t4::IT4WIFI)`:
 
 | Command | Description |
 |---------|-------------|
@@ -339,9 +374,9 @@ lock:
     name: "Gate Lock"
     optimistic: true
     on_lock:
-      - lambda: 'id(gate).send_cmd(CMD_BLOCK, IT4WIFI);'
+      - lambda: 'id(gate).send_cmd(bus_t4::CMD_BLOCK, bus_t4::IT4WIFI);'
     on_unlock:
-      - lambda: 'id(gate).send_cmd(CMD_RELEASE, IT4WIFI);'
+      - lambda: 'id(gate).send_cmd(bus_t4::CMD_RELEASE, bus_t4::IT4WIFI);'
 ```
 
 ### Raw Configuration Parameters
@@ -354,20 +389,19 @@ a platform, you can set any controller parameter by its raw hex address using
 ```yaml
 number:
   - platform: template
-    name: "Motor Force"
+    name: "Deceleration force (opening)"  # 0x4D, not exposed as a platform type
     min_value: 0
     max_value: 100
     step: 5
     set_action:
-      - lambda: 'id(gate).send_config_set(0x92, (uint8_t)x);'
+      - lambda: 'id(gate).send_config_set(0x4D, (uint8_t)x);'
 
   - platform: template
-    name: "Pause Duration"
-    min_value: 0
-    max_value: 250
-    unit_of_measurement: "s"
+    name: "Deceleration speed (opening)"  # 0x45
+    min_value: 25
+    max_value: 50
     set_action:
-      - lambda: 'id(gate).send_config_set(0x88, (uint8_t)x);'
+      - lambda: 'id(gate).send_config_set(0x45, (uint8_t)x);'
 ```
 
 ### Sending Commands for Debugging
@@ -457,10 +491,9 @@ During initialization, the component queries the controller for product informat
 | Product | Mode | Special Handling |
 |---------|------|------------------|
 | WLA1 (Walky) | `is_walky` | Uses 1-byte position values |
-| ROBUSHSR10 | `is_robus` | No position queries during movement |
 | Road 400 | Standard | Alternate status codes (0x83/0x84) |
 
-Device information (manufacturer, product, firmware) is logged at startup.
+The control unit's identity (manufacturer, product, hardware, firmware, description) is read at startup, logged, and exposed via the `diagnostics` text sensors.
 
 ## Troubleshooting
 

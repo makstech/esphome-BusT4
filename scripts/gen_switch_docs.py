@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the control-unit type tables in README.md from the registries in
-components/bus_t4/__init__.py (CONFIG_TYPES, NUMBER_TYPES, SELECT_TYPES,
-SENSOR_TYPES, BUTTON_TYPES).
+components/bus_t4_control_unit/__init__.py (CONFIG_TYPES, NUMBER_TYPES,
+SELECT_TYPES, SENSOR_TYPES, BUTTON_TYPES).
 
 Usage:
     python scripts/gen_switch_docs.py          # print all tables to stdout
@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-INIT = ROOT / "components" / "bus_t4" / "__init__.py"
+INIT = ROOT / "components" / "bus_t4_control_unit" / "__init__.py"
 README = ROOT / "README.md"
 
 

@@ -61,20 +61,14 @@ class BusT4Device {
       target_address_ = addr;
   }
 
+  // Packet role this device wants delivered (matched against message.device by the bus).
+  T4Target role() const { return role_; }
+
  protected:
   BusT4Component *parent_{nullptr};
   T4Source target_address_{0x00, 0x03};  // Default motor controller address
   bool target_locked_{false};            // true when the address was configured (skip discovery override)
+  T4Target role_{FOR_CU};                // OXI overrides to FOR_OXI
 };
 
 } // namespace esphome::bus_t4
-
-// Entity classes live in subdirectories; the hub creates them directly, so pull
-// their headers into this auto-included header (after BusT4Device is defined, so
-// the entities' back-include of this file resolves cleanly).
-#include "cover.h"
-#include "switch.h"
-#include "number.h"
-#include "select.h"
-#include "sensor.h"
-#include "button.h"
