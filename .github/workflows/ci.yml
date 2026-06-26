@@ -7,6 +7,20 @@ on:
     branches: [main]
 
 jobs:
+  unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build & run host unit tests
+        run: |
+          g++ -std=c++17 -Wall \
+            -I components/bus_t4_control_unit -I tests/stubs \
+            components/bus_t4_control_unit/time_based_position_estimator.cpp \
+            tests/test_time_based_position_estimator.cpp \
+            -o estimator_test
+          ./estimator_test
+
   validate:
     runs-on: ubuntu-latest
     steps:
