@@ -1,11 +1,10 @@
-// Host unit test for TimeBasedPositionEstimator. Build/run:
-//   g++ -std=c++17 -I components/bus_t4_control_unit -I tests/stubs \
-//       components/bus_t4_control_unit/time_based_position_estimator.cpp \
-//       tests/test_time_based_position_estimator.cpp -o estimator_test && ./estimator_test
+// Host unit test for TimeBasedPositionEstimator. See the CI unit-test job (or the
+// README) for the g++ build command.
 #include "time_based_position_estimator.h"
 
 #include <cmath>
 #include <cstdio>
+#include <string>
 
 // Test doubles for the esphome symbols the estimator links against.
 namespace esphome {
