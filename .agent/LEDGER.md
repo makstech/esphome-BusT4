@@ -28,3 +28,12 @@
     and wired into CI (new `unit-tests` job + `esphome config debug_yaml`).
   - Every config validated with `esphome config`. C++ integration compile is left to CI
     (`esphome compile example.yaml`), which now exercises all four platforms.
+
+- **CI green + PR opened.**
+  - Forked to 8silverg/esphome-BusT4, pushed the branch, opened PR makstech#23.
+  - Upstream PR CI is gated on maintainer approval (standard for fork PRs), so ran the
+    identical workflow in the fork (PR 8silverg#1): unit-tests ✓, validate ✓ (example.yaml +
+    debug_yaml), **build ✓ — `esphome compile example.yaml` passed (3m56s)**. Firmware compiles
+    cleanly with all four new platforms. Fork verification PR then closed.
+  - Note: local esp-idf compile is impossible on this Czech-locale + Python 3.14 box
+    (platformio/esptool + UnicodeDecodeError); CI on Ubuntu/3.12 is the gate.

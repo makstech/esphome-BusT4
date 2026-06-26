@@ -2,7 +2,10 @@
 
 **Branch:** `claude/quizzical-williamson-f97fe1` (fork of makstech/esphome-BusT4)
 
-**Phase:** Implementation complete → PR + real-hardware capture loop with Petr.
+**Phase:** PR open + CI green → real-hardware capture loop with Petr.
+
+**PR:** makstech/esphome-BusT4#23 (draft→ready). CI verified green in the fork
+(8silverg#1, now closed): unit-tests ✓, validate ✓, build/compile ✓.
 
 ## What is true right now
 - All five planned deliverables are implemented and committed (see LEDGER.md):
