@@ -20,6 +20,8 @@
 #include <algorithm>
 #include <cstdint>
 
+namespace esphome::bus_t4 {
+
 static constexpr uint8_t T4_BREAK = 0x00;
 static constexpr uint8_t T4_SYNC = 0x55;
 
@@ -76,16 +78,6 @@ enum T4InfoCommand : uint8_t {
   INF_POS_MAX = 0x18,    // Open position
   INF_POS_MIN = 0x19,    // Close position
   INF_IO = 0xD1,         // Input/output state (limit switches)
-
-  // Configuration parameters (settable)
-  CFG_AUTOCLS = 0x80,    // Auto-close (L1) - 0x00=off, 0x01=on
-  CFG_PH_CLS = 0x81,     // Close after photo (L2) - 0x00=off, 0x01=on
-  CFG_ALW_CLS = 0x82,    // Always close (L3) - 0x00=off, 0x01=on
-  CFG_STANDBY = 0x83,    // Standby mode - 0x00=off, 0x01=on
-  CFG_PEAK = 0x84,       // Peak mode - 0x00=off, 0x01=on
-  CFG_PRE_FLASH = 0x85,  // Pre-flash warning - 0x00=off, 0x01=on
-  CFG_CLOSE_SPEED = 0x90, // Close speed (0-100)
-  CFG_OPEN_SPEED = 0x91,  // Open speed (0-100)
 };
 
 // Request types (byte 11)
@@ -183,7 +175,7 @@ struct T4Packet {
   }
 
   T4Packet() = default;
-  T4Packet(const T4Source to, const T4Source from, const T4Protocol protocol, uint8_t *messageData,
+  T4Packet(const T4Source to, const T4Source from, const T4Protocol protocol, const uint8_t *messageData,
            const uint8_t messageSize) {
     size = sizeof(header) + messageSize + 1;
 
@@ -198,6 +190,14 @@ struct T4Packet {
     data[size - 1] = checksum(sizeof(header), messageSize);
   }
 };
+
+// Read a big-endian unsigned value of `width` bytes from the payload at `off`.
+inline uint32_t t4_read_be(const T4Packet &p, uint8_t off, uint8_t width) {
+  uint32_t v = 0;
+  for (uint8_t i = 0; i < width; i++)
+    v = (v << 8) | p.data[off + i];
+  return v;
+}
 
 // DEP command packet structure
 enum T4CommandPacket : uint8_t {
@@ -222,3 +222,5 @@ enum T4Command : uint8_t {
   CMD_RELEASE_AND_OPEN = 0x19,
   CMD_RELEASE_AND_CLOSE = 0x1A,
 };
+
+}  // namespace esphome::bus_t4

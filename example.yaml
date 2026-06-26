@@ -3,7 +3,14 @@
 
 esphome:
   name: gate
-  friendly_name: Gate
+  friendly_name: "Nice BusT4"   # the bridge/node device; gate + OXI sit under it
+  # Group entities into Home Assistant sub-devices. The cover (empty name) inherits
+  # its device name, so it shows as "Gate" rather than "Gate <cover name>".
+  devices:
+    - id: cu_dev
+      name: "Gate"
+    - id: oxi_dev
+      name: "OXI receiver"
 
 esp32:
   board: esp32dev
@@ -19,6 +26,27 @@ logger:
   baud_rate: 0  # Disable serial logging (UART is used for Bus-T4)
 
 api:
+  # Interactive bus debugging — call at runtime from Home Assistant
+  # (Developer Tools -> Actions) or `esphome` scripts, no reflash needed.
+  # Watch replies with: esphome logs example.yaml
+  actions:
+    # Send only the DMP message bytes; header, 55/size framing and both CRCs are
+    # added for you. Returns {"reply": "<hex>"} to the caller.
+    # Example (get control-unit IO state): message="04 D1 99 00 00"
+    - action: debug_request
+      variables:
+        message: string
+      then:
+        - api.respond:
+            data: !lambda 'root["reply"] = id(bus)->debug_request(message);'
+    # Send a byte-exact frame (you supply the whole frame incl. framing + CRCs).
+    # Returns {"reply": "<hex>"} to the caller (HA: call with "return response").
+    - action: debug_request_raw
+      variables:
+        frame: string
+      then:
+        - api.respond:
+            data: !lambda 'root["reply"] = id(bus)->debug_request_raw(frame);'
 
 ota:
   - platform: esphome
@@ -44,117 +72,79 @@ uart:
   rx_pin: GPIO18
   baud_rate: 19200
 
+# Layered model: the bus is the transport; devices on the bus declare entities.
+#   uart -> bus_t4 (transport) -> bus_t4_control_unit / bus_t4_oxi (devices) -> entities
 bus_t4:
   id: bus
+  diagnostics: true   # bus link health: error + timeout counters (on the node)
 
-cover:
-  - platform: bus_t4
-    name: "Gate"
-    id: gate
+# The control unit creates the gate cover and its config entities, and reads the
+# controller identity. Settable entities send a SET on change and track GET/SET
+# replies on the bus, so changes made via Oview or another client show immediately.
+bus_t4_control_unit:
+  bus_t4_id: bus
+  device: cu_dev
+  cover:
+    id: gate            # name defaults to "" -> inherits the device name ("Gate")
     auto_learn_timing: true
     open_duration: 20s
     close_duration: 20s
     position_report_interval: 1s
+  # One flat list of parameters by name; each becomes the right entity
+  # (switch / number / select / sensor / button), resolved from the name.
+  # Bare name, or a map to override name/icon/id.
+  expose:
+    - auto_close
+    - pause_time
+    - photo_close
+    - standby
+    - surge
+    - pre_flash
+    - { param: disable_internal_radio, name: "Radio off", icon: "mdi:radio-off" }
+    - step_by_step
+    - speed_opening
+    - speed_closing
+    - force_opening
+    - force_closing
+    - total_maneuvers
+    - reset_maintenance
+  diagnostics: true     # control-unit identity: firmware / product / hardware / description
 
-# Optional: Additional buttons for partial opening
+# Optional: the OXI plug-in radio receiver as its own device (identity sensors).
+bus_t4_oxi:
+  bus_t4_id: bus
+  device: oxi_dev
+
+# Optional: additional buttons for partial opening (grouped under the gate device)
 button:
   - platform: template
     name: "Partial Open 1"
+    device_id: cu_dev
     icon: "mdi:gate-arrow-right"
     on_press:
-      - lambda: id(gate).send_cmd(CMD_OPEN_PARTIAL_1);
+      - lambda: id(gate).send_cmd(bus_t4::CMD_OPEN_PARTIAL_1);
 
   - platform: template
     name: "Partial Open 2"
+    device_id: cu_dev
     icon: "mdi:gate-arrow-right"
     on_press:
-      - lambda: id(gate).send_cmd(CMD_OPEN_PARTIAL_2);
+      - lambda: id(gate).send_cmd(bus_t4::CMD_OPEN_PARTIAL_2);
 
   - platform: template
     name: "Step-by-Step"
+    device_id: cu_dev
     icon: "mdi:gate"
     on_press:
-      - lambda: id(gate).send_cmd(CMD_STEP);
-
-# Motor controller configuration switches
-# These send SET commands to change the controller's settings
-switch:
-  - platform: template
-    name: "Auto-Close"
-    icon: "mdi:timer"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_auto_close(true);
-    turn_off_action:
-      - lambda: id(gate).set_auto_close(false);
-
-  - platform: template
-    name: "Photo-Close"
-    icon: "mdi:camera-timer"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_photo_close(true);
-    turn_off_action:
-      - lambda: id(gate).set_photo_close(false);
-
-  - platform: template
-    name: "Always Close"
-    icon: "mdi:lock"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_always_close(true);
-    turn_off_action:
-      - lambda: id(gate).set_always_close(false);
-
-  - platform: template
-    name: "Standby Mode"
-    icon: "mdi:power-standby"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_standby(true);
-    turn_off_action:
-      - lambda: id(gate).set_standby(false);
-
-  - platform: template
-    name: "Peak Mode"
-    icon: "mdi:speedometer"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_peak_mode(true);
-    turn_off_action:
-      - lambda: id(gate).set_peak_mode(false);
-
-  - platform: template
-    name: "Pre-Flash Warning"
-    icon: "mdi:alarm-light"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_pre_flash(true);
-    turn_off_action:
-      - lambda: id(gate).set_pre_flash(false);
+      - lambda: id(gate).send_cmd(bus_t4::CMD_STEP);
 
 # Security lock using IT4WIFI device identity
 lock:
   - platform: template
-    name: "Gate Lock"
+    name: "Lock"
+    device_id: cu_dev
     optimistic: true
     on_lock:
-      - lambda: 'id(gate).send_cmd(CMD_BLOCK, IT4WIFI);'
+      - lambda: 'id(gate).send_cmd(bus_t4::CMD_BLOCK, bus_t4::IT4WIFI);'
     on_unlock:
-      - lambda: 'id(gate).send_cmd(CMD_RELEASE, IT4WIFI);'
-
-# Raw hex command input for debugging/testing
-# Enter hex string like "55.0C.00.FF..." or "550C00FF..." in Home Assistant
-text:
-  - platform: template
-    name: "Raw Command"
-    id: raw_command
-    optimistic: true
-    mode: text
-    on_value:
-      then:
-        - lambda: |-
-            if (!x.empty()) {
-              id(gate).send_raw_cmd(x);
-            }
-
+      - lambda: 'id(gate).send_cmd(bus_t4::CMD_RELEASE, bus_t4::IT4WIFI);'

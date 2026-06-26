@@ -16,7 +16,7 @@ ESPHome component for integrating **Nice gate and garage door automation** into 
 - 📊 **Real-time status** - Opening, closing, stopped, fully open/closed states
 - 📏 **Position tracking** - Time-based estimation with encoder priority when available
 - 🧠 **Auto-learning** - Automatically learns and re-learns your gate's open/close timing
-- ⚙️ **Motor configuration** - Control auto-close, standby, peak mode, and more via SET commands
+- ⚙️ **Motor configuration** - Control auto-close, standby, surge mode, and more via SET commands
 - 🔧 **Wide compatibility** - Device-specific handling for Walky, Robus, Road 400, and more
 - 📡 **OXI receiver logging** - Remote control button presses are logged for debugging
 
@@ -40,7 +40,6 @@ Should work with any Nice controller that has a Bus-T4 port.
 
 **Device-specific features:**
 - **Walky gates**: Uses 1-byte position values (auto-detected)
-- **Robus gates**: Position queries disabled during movement (auto-detected)
 - **Road 400**: Alternate status codes supported (0x83/0x84)
 
 ## Quick Start
@@ -111,20 +110,21 @@ external_components:
   - source:
       type: git
       url: https://github.com/makstech/esphome-BusT4
-    components: [bus_t4]
+    components: [bus_t4, bus_t4_control_unit, bus_t4_oxi]
 
 uart:
   tx_pin: GPIO21
   rx_pin: GPIO18
   baud_rate: 19200
 
+# Layered model: uart -> bus_t4 (transport) -> device(s) on the bus -> entities
 bus_t4:
   id: bus
 
-cover:
-  - platform: bus_t4
-    name: "Gate"
-    id: gate
+bus_t4_control_unit:
+  bus_t4_id: bus
+  cover:
+    id: gate    # name defaults to "" -> inherits the device/node name (here, "Gate")
 ```
 
 > **Note**: The `minimum_chip_revision: "3.1"` setting is specific to the Nice BiDi-WiFi module (ESP32 rev3.1). It reduces binary size by excluding legacy workaround code. Safe to use with OTA updates — if the chip revision doesn't match, ESPHome will reject the firmware and automatically roll back. Remove or adjust for custom ESP32 hardware. See [ESPHome ESP32 advanced configuration](https://esphome.io/components/esp32/#advanced-configuration) for details.
@@ -140,66 +140,240 @@ esphome run gate.yaml
 ### Full Example
 
 ```yaml
+esphome:
+  name: gate
+  friendly_name: "Nice BusT4"   # the bridge/node device
+  # Optional: group entities into Home Assistant sub-devices. An entity with an
+  # empty name inherits its device's name, so the cover shows as just "Gate".
+  devices:
+    - id: cu_dev
+      name: "Gate"
+    - id: oxi_dev
+      name: "OXI receiver"
+
 external_components:
   - source:
       type: git
       url: https://github.com/makstech/esphome-BusT4
-    components: [bus_t4]
+    components: [bus_t4, bus_t4_control_unit, bus_t4_oxi]
 
 uart:
   tx_pin: GPIO21
   rx_pin: GPIO18
   baud_rate: 19200
 
+# The bus is the transport. Devices on the bus declare entities.
 bus_t4:
   id: bus
-  address: 0x5090  # Optional: custom device address
+  address: 0x5090   # Optional: this ESP module's own bus address
+  diagnostics: true # Optional: bus link-health sensors (errors / timeouts)
 
-cover:
-  - platform: bus_t4
-    name: "Gate"
-    id: gate
+bus_t4_control_unit:
+  bus_t4_id: bus
+  device: cu_dev    # group this block's entities under the "Gate" device
+  cover:
+    id: gate                      # name defaults to "" -> inherits the device name ("Gate")
     auto_learn_timing: true       # Auto-learn open/close duration
     open_duration: 20s            # Initial/fallback open time
     close_duration: 20s           # Initial/fallback close time
     position_report_interval: 1s  # Position update rate
+    force_estimated_position: false # Debug: ignore the encoder, always use the time estimate
+  # One flat list of parameters by name; each becomes the right entity
+  # (switch / number / select / sensor / button), resolved from the name.
+  # Bare name, or a map to override name/icon/id.
+  expose:
+    - auto_close
+    - pause_time
+    - photo_close
+    - speed_opening
+    - speed_closing
+    - type: surge
+      name: "Starting torque"
+      icon: "mdi:flash"
+    - total_maneuvers
+    - reset_maintenance
+  diagnostics: true   # controller identity: firmware / product / hardware / description
 
-# Optional: Additional control buttons
+# Optional: the OXI plug-in radio receiver as its own device
+bus_t4_oxi:
+  bus_t4_id: bus
+  device: oxi_dev
+
+# Optional: additional control buttons (grouped under the gate device).
+# Protocol enums live in the bus_t4 namespace, so qualify them in lambdas.
 button:
   - platform: template
     name: "Partial Open"
+    device_id: cu_dev
     icon: "mdi:gate-arrow-right"
     on_press:
-      - lambda: id(gate).send_cmd(CMD_OPEN_PARTIAL_1);
+      - lambda: id(gate).send_cmd(bus_t4::CMD_OPEN_PARTIAL_1);
 
   - platform: template
     name: "Step-by-Step"
+    device_id: cu_dev
     icon: "mdi:gate"
     on_press:
-      - lambda: id(gate).send_cmd(CMD_STEP);
+      - lambda: id(gate).send_cmd(bus_t4::CMD_STEP);
 ```
 
 ### Configuration Variables
 
-#### bus_t4 Component
+The component is layered like `uart → modbus → modbus_controller`: a `bus_t4`
+transport, with one or more devices declared on it.
+
+#### bus_t4 (transport)
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `address` | hex | `0x5090` | Device address on the bus |
+| `id` | id | — | Referenced by the device components via `bus_t4_id` |
+| `address` | hex | `0x5090` | This ESP module's own bus address (the `from` field) |
+| `diagnostics` | bool/map | — | `true` adds bus link-health sensors (`Errors`, `Timeouts`); a map renames them |
 
-#### Cover Platform
+#### bus_t4_control_unit (device)
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `name` | string | *Required* | Name for Home Assistant |
-| `auto_learn_timing` | boolean | `true` | Auto-learn open/close duration |
-| `open_duration` | time | `20s` | Initial/fallback time to fully open |
-| `close_duration` | time | `20s` | Initial/fallback time to fully close |
-| `position_report_interval` | time | `1s` | How often to update position during movement |
+| `bus_t4_id` | id | *auto* | The `bus_t4` to attach to |
+| `device` | id | — | A device declared in `esphome: devices:` — all of this block's entities are grouped under it as one HA device (set once, no per-entity `device_id`) |
+| `address` | hex | *auto* | Controller address override; auto-detected via `INF_WHO` when omitted |
+| `cover` | block | — | The gate cover (options below) |
+| `expose` | list | — | Parameters to expose, by name. Each becomes the right entity (`switch`/`number`/`select`/`sensor`/`button`), resolved from the name (types below) |
+| `diagnostics` | bool/map | — | `true` adds the controller's firmware/product/hardware/description text sensors (or a map to rename them) |
+
+Every `expose` entry is a built-in param name — bare (`auto_close`) or a map with per-entity overrides (`{param: auto_close, name: …, icon: …, id: …}`). The entity type (switch/number/select/sensor/button) is resolved from the name (names are unique across types). Settable entities send a SET on change and also track GET/SET replies on the bus, so changes made elsewhere (Oview, another client) are reflected immediately. A param the controller doesn't support shows as unavailable.
+
+**Custom parameters.** To expose a parameter not in the built-in tables below, define it inline with `byte` + `domain` instead of `param`:
+
+```yaml
+expose:
+  - byte: 0x77            # raw parameter address
+    domain: number        # switch | number | select | sensor | button
+    name: "My parameter"
+    min: 0                # number: min/max required; step/unit/width/scale optional
+    max: 100
+    unit: "%"
+  - byte: 0x53
+    domain: select
+    name: "Output 3"
+    options: [[0, "None"], [2, "Gate open"]]   # [raw, label] pairs
+```
+
+Required tail per domain: number → `min`,`max` (+ optional `step`=1, `unit`, `width`=1, `scale`=1); select → `options`; button → `value`; sensor → optional `width`=1; switch → none. ⚠️ A custom entry writes the raw byte to the controller with no range checks — same risk class as the `debug_request` action below. Find addresses with `debug_request` or gashtaan's parameter table.
+
+`cover` options: `name` (defaults to `""`, which makes the cover inherit its device name), `auto_learn_timing` (`true`), `open_duration` (`20s`), `close_duration` (`20s`), `position_report_interval` (`1s`), `force_estimated_position` (`false`; debug — ignore the encoder and always report the time-based estimate, at `position_report_interval` cadence).
+
+#### bus_t4_oxi (device)
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `bus_t4_id` | id | *auto* | The `bus_t4` to attach to |
+| `device` | id | — | Group the OXI sensors under this `esphome: devices:` device |
+| `product` / `hardware` / `firmware` | string/map | *default names* | OXI radio-receiver identity text sensors |
+
+```yaml
+bus_t4:
+  id: bus
+bus_t4_control_unit:
+  bus_t4_id: bus
+  expose:
+    - photo_close
+    - auto_close
+    - pause_time
+    - standby
+    - standby_mode
+    - standby_time
+    - step_by_step
+    - total_maneuvers
+    - reset_maintenance
+```
+
+##### Switch params (`switch`)
+
+<!-- BEGIN SWITCH_TYPES -->
+| `param` | Description |
+|---|---|
+| `auto_close` | Auto-close |
+| `photo_close` | Close after photo |
+| `always_close` | Always-close |
+| `standby` | Stand-by |
+| `surge` | Surge |
+| `pre_flash` | Pre-flashing |
+| `disable_internal_radio` | Disable internal radio |
+| `slave` | Slave mode |
+| `automation_lock` | Automation lock |
+| `keylock` | Keylock |
+| `decelerations` | Decelerations |
+<!-- END SWITCH_TYPES -->
+
+##### Number params (`number`)
+
+<!-- BEGIN NUMBER_TYPES -->
+| `param` | Description | Range |
+|---|---|---|
+| `pause_time` | Auto-close pause time | 0–240 s |
+| `speed_opening` | Speed (opening) | 25–100 % |
+| `speed_closing` | Speed (closing) | 25–100 % |
+| `force_opening` | Force (opening) | 0–100 % |
+| `force_closing` | Force (closing) | 0–100 % |
+| `decel_speed_opening` | Deceleration speed (opening) | 25–50 % |
+| `decel_speed_closing` | Deceleration speed (closing) | 25–50 % |
+| `decel_force_opening` | Deceleration force (opening) | 0–100 % |
+| `decel_force_closing` | Deceleration force (closing) | 0–100 % |
+| `decel_sensitivity_opening` | Deceleration sensitivity (opening) | 0–100 % |
+| `decel_sensitivity_closing` | Deceleration sensitivity (closing) | 0–100 % |
+| `maintenance_threshold` | Maintenance threshold | 100–20000 |
+| `photo_close_time` | Close after photo time | 0–250 s |
+| `always_close_time` | Always-close time | 0–20 s |
+| `standby_time` | Stand-by time | 5–250 s |
+| `surge_time` | Surge time | 1–10 s |
+| `pre_flash_open_time` | Pre-flash time (opening) | 1–10 s |
+| `pre_flash_close_time` | Pre-flash time (closing) | 1–10 s |
+| `max_work_time` | Maximum work time | 10–250 s |
+| `courtesy_light_time` | Courtesy light time | 0–240 s |
+| `electric_lock_time` | Electric lock time | 0.1–10 s |
+| `suction_cup_time` | Suction cup time | 0.1–10 s |
+| `brief_reversal` | Brief reversal | 0.5–5 s |
+<!-- END NUMBER_TYPES -->
+
+##### Select params (`select`)
+
+<!-- BEGIN SELECT_TYPES -->
+| `param` | Description |
+|---|---|
+| `step_by_step` | Step-by-Step mode |
+| `output_1` | Output 1 function |
+| `output_2` | Output 2 function |
+| `output_3` | Output 3 function |
+| `output_4` | Output 4 function |
+| `output_5` | Output 5 function |
+| `output_6` | Output 6 function |
+| `maintenance_management` | Maintenance management |
+| `photo_close_mode` | Close after photo mode |
+| `always_close_mode` | Always-close mode |
+| `standby_mode` | Stand-by mode |
+<!-- END SELECT_TYPES -->
+
+##### Sensor params (`sensor`, read-only)
+
+<!-- BEGIN SENSOR_TYPES -->
+| `param` | Description |
+|---|---|
+| `maintenance_count` | Maintenance counter |
+| `total_maneuvers` | Total maneuvers |
+<!-- END SENSOR_TYPES -->
+
+##### Button params (`button`, momentary)
+
+<!-- BEGIN BUTTON_TYPES -->
+| `param` | Description |
+|---|---|
+| `reset_maintenance` | Reset maintenance counter |
+<!-- END BUTTON_TYPES -->
 
 ### Available Commands
 
-Use in lambdas with `id(gate).send_cmd(COMMAND)`:
+Use in lambdas with `id(gate).send_cmd(bus_t4::COMMAND)` (the protocol enums live in the `bus_t4` namespace):
 
 | Command | Description |
 |---------|-------------|
@@ -213,7 +387,7 @@ Use in lambdas with `id(gate).send_cmd(COMMAND)`:
 
 ### Security Commands (Lock/Block)
 
-Security commands require the IT4WIFI device identity. Use `send_cmd(COMMAND, IT4WIFI)`:
+Security commands require the IT4WIFI device identity. Use `send_cmd(bus_t4::COMMAND, bus_t4::IT4WIFI)`:
 
 | Command | Description |
 |---------|-------------|
@@ -232,109 +406,75 @@ lock:
     name: "Gate Lock"
     optimistic: true
     on_lock:
-      - lambda: 'id(gate).send_cmd(CMD_BLOCK, IT4WIFI);'
+      - lambda: 'id(gate).send_cmd(bus_t4::CMD_BLOCK, bus_t4::IT4WIFI);'
     on_unlock:
-      - lambda: 'id(gate).send_cmd(CMD_RELEASE, IT4WIFI);'
-```
-
-### Motor Controller Configuration
-
-You can change motor controller settings via lambdas. These send SET commands to the controller:
-
-| Method | Description |
-|--------|-------------|
-| `set_auto_close(bool)` | L1 - Enable/disable auto-close after opening |
-| `set_photo_close(bool)` | L2 - Close after photo sensor clears |
-| `set_always_close(bool)` | L3 - Always close (ignore hold-open) |
-| `set_standby(bool)` | Enable/disable standby mode (power saving) |
-| `set_peak_mode(bool)` | Enable/disable peak mode (faster operation) |
-| `set_pre_flash(bool)` | Enable/disable pre-flash warning light |
-
-Example usage with buttons:
-
-```yaml
-button:
-  - platform: template
-    name: "Enable Auto-Close"
-    on_press:
-      - lambda: id(gate).set_auto_close(true);
-
-  - platform: template
-    name: "Disable Auto-Close"
-    on_press:
-      - lambda: id(gate).set_auto_close(false);
-```
-
-Example usage with switches:
-
-```yaml
-switch:
-  - platform: template
-    name: "Auto-Close"
-    icon: "mdi:timer"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_auto_close(true);
-    turn_off_action:
-      - lambda: id(gate).set_auto_close(false);
-
-  - platform: template
-    name: "Pre-Flash Warning"
-    icon: "mdi:alarm-light"
-    optimistic: true
-    turn_on_action:
-      - lambda: id(gate).set_pre_flash(true);
-    turn_off_action:
-      - lambda: id(gate).set_pre_flash(false);
+      - lambda: 'id(gate).send_cmd(bus_t4::CMD_RELEASE, bus_t4::IT4WIFI);'
 ```
 
 ### Raw Configuration Parameters
 
-In addition to the named methods (`set_auto_close`, `set_standby`, etc.), you can set any controller parameter by its raw hex address using `send_config_set()`:
+The first-class way to expose a parameter not in the built-in tables is a **custom
+`expose` entry** (`byte` + `domain`, see [Custom parameters](#bus_t4_control_unit-device))
+— you get a real switch/number/select with GET/SET tracking and no lambdas.
+
+For one-off pokes you can still call `send_config_set()` directly from a lambda —
+it writes any parameter by raw hex address (the same call the entities make under
+the hood):
 
 ```yaml
 number:
   - platform: template
-    name: "Motor Force"
-    min_value: 0
+    name: "Opening speed (raw)"   # 0x42 — same parameter as the speed_opening number
+    min_value: 25
     max_value: 100
-    step: 5
     set_action:
-      - lambda: 'id(gate).send_config_set(0x92, (uint8_t)x);'
-
-  - platform: template
-    name: "Pause Duration"
-    min_value: 0
-    max_value: 250
-    unit_of_measurement: "s"
-    set_action:
-      - lambda: 'id(gate).send_config_set(0x88, (uint8_t)x);'
+      - lambda: 'id(gate).send_config_set(0x42, (uint8_t)x);'
 ```
 
-### Raw Command for Debugging
+Multi-byte parameters take a width: `send_config_set(param, (uint16_t)x, 2)`. Find
+addresses with the `debug_request` action (below) or gashtaan's parameter table.
 
-For debugging and testing, you can send raw hex commands directly to the bus using `send_raw_cmd()`. This accepts hex strings in formats like `"55.0C.00.FF..."` or `"550C00FF..."` (dots/spaces are automatically stripped).
+### Sending Commands for Debugging
 
-The easiest way to use this is with an ESPHome Text component:
+Two component methods let you push commands onto the bus at runtime (no reflash). Each sends, waits for the reply, and **returns it as a hex string** (or `"no reply"` on timeout, `""` on bad input); the reply is also logged (`[debug] RX: ...`):
+
+- `id(bus)->debug_request(message)` — a DMP request to the control unit; supply only the message bytes and the header, `55`/size framing and both checksums are added for you. Returns as soon as the reply with the matching command byte arrives.
+- `id(bus)->debug_request_raw(frame)` — sends a byte-exact frame (you supply the whole thing including framing and checksums) and returns on the first non-echo reply.
+
+These are thin hex wrappers over the component's send primitives: `dep_send()` / `dmp_send()` (fire-and-forget) and `dmp_request()` (waits for the reply) — the same primitives `send_cmd()` and the switch platform use.
+
+Both accept hex in any format (`"04 D1 99"`, `"04.D1.99"` or `"04D199"` — non-hex characters are stripped). They block the main loop only until the reply lands (typically ~150 ms), or until `timeout_ms` (default 500) on no reply.
+
+The cleanest way to call them at runtime is via Home Assistant actions. Wrap a send in `api.respond` to return the reply to the caller:
 
 ```yaml
-text:
-  - platform: template
-    name: "Raw Command"
-    id: raw_command
-    optimistic: true
-    mode: text
-    on_value:
+api:
+  actions:
+    # Each returns {"reply": "<hex>"} to the caller.
+    - action: debug_request
+      variables:
+        message: string
       then:
-        - lambda: |-
-            if (!x.empty()) {
-              id(gate).send_raw_cmd(x);
-            }
+        - api.respond:
+            data: !lambda 'root["reply"] = id(bus)->debug_request(message);'
+    - action: debug_request_raw
+      variables:
+        frame: string
+      then:
+        - api.respond:
+            data: !lambda 'root["reply"] = id(bus)->debug_request_raw(frame);'
 ```
 
-This creates a text input in Home Assistant where you can paste hex commands. The command is sent immediately when you submit the text.
+Call it from Developer Tools → Actions with "return response":
 
-> **Note**: The text component approach is recommended because ESPHome's API service string variables have [known issues](https://github.com/esphome/issues/issues/3564) with the ESP-IDF framework.
+```yaml
+action: esphome.gate_debug_request_raw
+data:
+  frame: "55.0D.00.03.00.81.08.06.8C.04.08.89.00.00.85.0D"
+# response -> {"reply": "00.81.00.03..."}
+```
+
+> **Note**: `api.respond` needs ESPHome 2025.12+; `supports_response` is auto-detected (`optional`) when the action returns data.
 
 ## How Position Tracking Works
 
@@ -381,10 +521,9 @@ During initialization, the component queries the controller for product informat
 | Product | Mode | Special Handling |
 |---------|------|------------------|
 | WLA1 (Walky) | `is_walky` | Uses 1-byte position values |
-| ROBUSHSR10 | `is_robus` | No position queries during movement |
 | Road 400 | Standard | Alternate status codes (0x83/0x84) |
 
-Device information (manufacturer, product, firmware) is logged at startup.
+The control unit's identity (manufacturer, product, hardware, firmware, description) is read at startup, logged, and exposed via the `diagnostics` text sensors.
 
 ## Troubleshooting
 

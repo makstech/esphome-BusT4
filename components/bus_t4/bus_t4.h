@@ -40,16 +40,35 @@ class BusT4Device {
   // Accepts uint8_t to allow raw parameter values beyond the T4InfoCommand enum
   void send_config_set(uint8_t param, uint8_t value);
 
+  // Multi-byte SET: value sent big-endian over `width` bytes (1-4).
+  void send_config_set(uint8_t param, uint32_t value, uint8_t width);
+
   // Called by BusT4Component when a packet is received
   virtual void on_packet(const T4Packet &packet) {}
 
   // Get the address of the motor controller we're talking to
   T4Source get_target_address() const { return target_address_; }
   void set_target_address(T4Source addr) { target_address_ = addr; }
+  // Pin the target from a configured 0xAABB address; locks it against discovery.
+  void set_target_address(uint16_t addr) {
+    target_address_ = {static_cast<uint8_t>(addr >> 8), static_cast<uint8_t>(addr & 0xFF)};
+    target_locked_ = true;
+  }
+
+  // Called by the component when WHO resolves the controller; ignored if pinned.
+  void on_controller_resolved(T4Source addr) {
+    if (!target_locked_)
+      target_address_ = addr;
+  }
+
+  // Packet role this device wants delivered (matched against message.device by the bus).
+  T4Target role() const { return role_; }
 
  protected:
   BusT4Component *parent_{nullptr};
   T4Source target_address_{0x00, 0x03};  // Default motor controller address
+  bool target_locked_{false};            // true when the address was configured (skip discovery override)
+  T4Target role_{FOR_CU};                // OXI overrides to FOR_OXI
 };
 
 } // namespace esphome::bus_t4

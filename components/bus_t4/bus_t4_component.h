@@ -4,8 +4,10 @@
 #include <freertos/queue.h>
 #include <freertos/event_groups.h>
 #include <functional>
+#include <string>
 #include <vector>
 #include "esphome/components/uart/uart.h"
+#include "esphome/components/sensor/sensor.h"
 #include "t4_packet.h"
 
 #include <driver/uart.h>
@@ -23,6 +25,7 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   void setup() override;
   void loop() override;
   void dump_config() override;
+  float get_setup_priority() const override { return setup_priority::HARDWARE; }
 
   bool read(T4Packet *packet, TickType_t xTicksToWait) {
     if (rxQueue_ == nullptr)
@@ -36,8 +39,23 @@ class BusT4Component final : public Component, public uart::UARTDevice {
     return xQueueSend(txQueue_, packet, xTicksToWait);
   }
 
-  // Send raw bytes directly to UART (for debugging/testing)
-  void write_raw(const uint8_t *data, size_t len);
+  // --- Send primitives (used by devices via parent_, and by the debug helpers) ---
+  // Verb says whether a reply is expected: `send` fires and returns; `request` waits.
+  void dep_send(T4Source to, const uint8_t *msg, size_t len);  // DEP (execute-only, no reply)
+  void dmp_send(T4Source to, const uint8_t *msg, size_t len);  // DMP, async (reply via on_packet)
+  // DMP request: frame `msg` to `to`, send, and block up to timeout_ms for the
+  // matching reply (same command byte); non-matching packets are dispatched to
+  // devices normally. Returns true and fills `reply`. Don't call from a hot loop —
+  // it blocks; the cover's periodic polling uses async dmp_send instead.
+  bool dmp_request(T4Source to, const uint8_t *msg, size_t len, T4Packet *reply, uint32_t timeout_ms = 500);
+
+  // --- Interactive debugging (hex wrappers, callable from YAML lambdas / API actions) ---
+  // DMP request to the control unit from message bytes; returns the reply as a hex
+  // string (e.g. "00.81.00.03..."), or "no reply" on timeout / "" on bad input.
+  // e.g. debug_request("04 D1 99 00 00") reads IO state.
+  std::string debug_request(const std::string &message_hex, uint32_t timeout_ms = 500);
+  // Send byte-exact frame bytes (no framing/CRCs added — you supply the whole frame).
+  std::string debug_request_raw(const std::string &frame_hex, uint32_t timeout_ms = 500);
 
   void set_address(const uint16_t address) {
     address_.address = static_cast<uint8_t>(address >> 8);
@@ -49,15 +67,39 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   // Register a device to receive packet callbacks
   void register_device(BusT4Device *device) { devices_.push_back(device); }
 
+  void set_bus_errors_sensor(sensor::Sensor *s) { bus_errors_sensor_ = s; }
+  void set_bus_timeouts_sensor(sensor::Sensor *s) { bus_timeouts_sensor_ = s; }
+
+  // Blocking single-shot identity read: GET `info_cmd` from `to`, return the
+  // reply's string payload (empty on timeout). Used by device components at setup.
+  std::string fetch_string(T4Source to, uint8_t info_cmd);
+
+  // Propagate the discovered controller address to every registered device
+  // (each ignores it if its address was pinned via config).
+  void set_controller_address(T4Source addr);
+
+  bool discovery_ready() const { return discovered_; }
+  T4Source get_controller_address() const { return controller_address_; }
+  T4Source get_oxi_address() const { return oxi_address_; }
+  bool has_oxi() const { return has_oxi_; }
+
  private:
+  void discover_();
   void rxTask();
   void txTask();
   static void rxTaskThunk(void *self) { static_cast<BusT4Component *>(self)->rxTask(); }
   static void txTaskThunk(void *self) { static_cast<BusT4Component *>(self)->txTask(); }
 
+  // Dispatch a received packet to all registered devices (skips TX echo).
+  void dispatch_packet_(const T4Packet &packet);
+
   // Send a BusT4 break signal (~1ms low pulse) before each packet.
   // Temporarily lowers UART baud rate to produce the correct break duration.
   void send_break();
+
+  // Parse a hex string ("04 D1 99" or "04D199") into bytes. Returns empty on
+  // an odd digit count or no hex digits (callers treat empty as invalid input).
+  static std::vector<uint8_t> parse_hex_(const std::string &s);
 
   T4Source address_;
 
@@ -71,8 +113,22 @@ class BusT4Component final : public Component, public uart::UARTDevice {
 
   std::vector<BusT4Device *> devices_;
 
+  bool discovered_{false};
+  T4Source controller_address_{0x00, 0x03};
+  T4Source oxi_address_{0x00, 0x00};
+  bool has_oxi_{false};
+
   // Cached UART port for direct baud rate register writes during break signal.
   uart_port_t uart_num_ = UART_NUM_MAX;
+
+  sensor::Sensor *bus_errors_sensor_{nullptr};
+  sensor::Sensor *bus_timeouts_sensor_{nullptr};
+
+  // Bus diagnostics (cumulative since boot); written by rxTask/dmp_request.
+  uint32_t rx_errors_{0};    // bad frame: header/payload CRC, framing, or rxQueue full (logged per type)
+  uint32_t req_timeout_{0};  // dmp_request gave up waiting for a reply
+  uint32_t last_bus_errors_{0xFFFFFFFF};
+  uint32_t last_bus_timeouts_{0xFFFFFFFF};
 };
 
 enum { EB_REQUEST_FREE = 1, EB_REQUEST_PENDING = 2, EB_REQUEST_COMPLETE = 4 };
