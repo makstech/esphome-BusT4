@@ -31,6 +31,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Check README tables in sync with schema
+        run: python scripts/gen_param_docs.py --check
+
       - name: Install ESPHome
         run: pip install esphome
 

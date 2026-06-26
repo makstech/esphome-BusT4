@@ -85,17 +85,8 @@ TABLES = [
 ]
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--patch", action="store_true", help="update README.md in-place")
-    args = parser.parse_args()
-
-    if not args.patch:
-        for marker, build in TABLES:
-            print(f"# {marker}\n{build()}\n")
-        return
-
-    text = README.read_text()
+def render(text):
+    """Return README text with every table block regenerated from PARAMS."""
     for marker, build in TABLES:
         start, end = f"<!-- BEGIN {marker} -->", f"<!-- END {marker} -->"
         pattern = re.compile(re.escape(start) + r".*?" + re.escape(end), re.DOTALL)
@@ -104,8 +95,30 @@ def main():
             sys.exit(1)
         block = f"{start}\n{build()}\n{end}"
         text = pattern.sub(lambda m: block, text)
-    README.write_text(text)
-    print("README.md updated.")
+    return text
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--patch", action="store_true", help="update README.md in-place")
+    group.add_argument("--check", action="store_true",
+                       help="exit non-zero if README tables are out of sync with PARAMS")
+    args = parser.parse_args()
+
+    if args.patch:
+        README.write_text(render(README.read_text()))
+        print("README.md updated.")
+    elif args.check:
+        current = README.read_text()
+        if render(current) != current:
+            print("ERROR: README parameter tables are out of date with PARAMS. "
+                  "Run: python scripts/gen_param_docs.py --patch", file=sys.stderr)
+            sys.exit(1)
+        print("README parameter tables are in sync.")
+    else:
+        for marker, build in TABLES:
+            print(f"# {marker}\n{build()}\n")
 
 
 if __name__ == "__main__":
