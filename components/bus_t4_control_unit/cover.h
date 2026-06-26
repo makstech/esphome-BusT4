@@ -1,8 +1,8 @@
 #pragma once
 
 #include "esphome/components/cover/cover.h"
-#include "esphome/core/preferences.h"
 #include "esphome/components/bus_t4/bus_t4.h"
+#include "time_based_position_estimator.h"
 #include <string>
 
 namespace esphome::bus_t4_control_unit {
@@ -31,22 +31,6 @@ static constexpr uint32_t POSITION_UPDATE_INTERVAL = 500;
 // Position threshold below which cover is considered fully closed
 static constexpr float CLOSED_POSITION_THRESHOLD = 0.007f;
 
-// Minimum valid learned duration (ms) - ignore if shorter
-static constexpr uint32_t MIN_LEARNED_DURATION = 3000;  // 3 seconds
-
-// Maximum valid learned duration (ms) - ignore if longer
-static constexpr uint32_t MAX_LEARNED_DURATION = 300000;  // 5 minutes
-
-// Deviation threshold for updating learned values (10%)
-static constexpr float LEARNING_DEVIATION_THRESHOLD = 0.10f;
-
-// Structure for persisting learned durations
-struct LearnedDurations {
-  uint32_t open_duration;
-  uint32_t close_duration;
-  bool valid;  // Set to true after first successful learning
-};
-
 // Products starting with WLA = Walky (uses 1-byte position values)
 static const std::string PRODUCT_WALKY = "WLA";
 
@@ -64,10 +48,11 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   void on_packet(const T4Packet &packet) override;
 
   // Configuration setters (from YAML)
-  void set_open_duration(uint32_t duration) { open_duration_ = duration; }
-  void set_close_duration(uint32_t duration) { close_duration_ = duration; }
-  void set_auto_learn_timing(bool enable) { auto_learn_timing_ = enable; }
+  void set_open_duration(uint32_t duration) { timing_.set_open_duration(duration); }
+  void set_close_duration(uint32_t duration) { timing_.set_close_duration(duration); }
+  void set_auto_learn_timing(bool enable) { timing_.set_auto_learn(enable); }
   void set_position_report_interval(uint32_t interval) { position_report_interval_ = interval; }
+  void set_force_estimated_position(bool force) { force_estimated_position_ = force; }
   void set_control_unit(BusT4ControlUnit *cu) { cu_ = cu; }
 
  protected:
@@ -113,19 +98,9 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   // Target position for time-based positioning
   float target_position_{-1.0f};
 
-  // Time-based position tracking (for gates without encoder feedback)
-  // Configure open_duration and close_duration in seconds
-  uint32_t open_duration_{20000};   // Time to fully open (ms) - default 20s
-  uint32_t close_duration_{20000};  // Time to fully close (ms) - default 20s
-  uint32_t movement_start_time_{0}; // When current movement started
-  float position_at_start_{0.0f};   // Position when movement started
-
-  // Auto-learning for open/close durations
-  bool auto_learn_timing_{true};         // Whether to auto-learn timing
-  bool learning_open_{false};            // Currently learning open duration
-  bool learning_close_{false};           // Currently learning close duration
-  uint32_t learning_start_time_{0};      // When learning movement started
-  ESPPreferenceObject pref_;             // Preference storage for learned values
+  // Time-based position estimation + auto-learning (gates without encoder feedback)
+  TimeBasedPositionEstimator timing_;
+  bool force_estimated_position_{false};  // Ignore the encoder and always use the estimate (testing)
 
   // Timing
   uint32_t last_position_update_{0};
@@ -141,15 +116,6 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   // State tracking for change detection
   cover::CoverOperation last_published_op_{cover::COVER_OPERATION_IDLE};
   float last_published_pos_{-1.0f};
-
-  // Helper methods for learning
-  void start_learning_open();
-  void start_learning_close();
-  void finish_learning_open();
-  void finish_learning_close();
-  void cancel_learning();
-  void save_learned_durations();
-  void load_learned_durations();
 
   // Request status confirmation after unexpected stop
   void request_status_confirmation();

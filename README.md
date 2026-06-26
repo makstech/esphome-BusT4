@@ -177,6 +177,7 @@ bus_t4_control_unit:
     open_duration: 20s            # Initial/fallback open time
     close_duration: 20s           # Initial/fallback close time
     position_report_interval: 1s  # Position update rate
+    force_estimated_position: false # Debug: ignore the encoder, always use the time estimate
   # Config flags: bare type, or a map with name/icon overrides
   flags:
     - auto_close
@@ -240,7 +241,7 @@ transport, with one or more devices declared on it.
 
 Every `flags`/`numbers`/`selects`/`sensors`/`buttons` entry is a bare type name **or** a map with per-entity overrides (`name`, `icon`, `id`, …). Settable entities send a SET on change and also track GET/SET replies on the bus, so changes made elsewhere (Oview, another client) are reflected immediately. A param the controller doesn't support shows as unavailable.
 
-`cover` options: `name` (defaults to `""`, which makes the cover inherit its device name), `auto_learn_timing` (`true`), `open_duration` (`20s`), `close_duration` (`20s`), `position_report_interval` (`1s`).
+`cover` options: `name` (defaults to `""`, which makes the cover inherit its device name), `auto_learn_timing` (`true`), `open_duration` (`20s`), `close_duration` (`20s`), `position_report_interval` (`1s`), `force_estimated_position` (`false`; debug — ignore the encoder and always report the time-based estimate, at `position_report_interval` cadence).
 
 #### bus_t4_oxi (device)
 

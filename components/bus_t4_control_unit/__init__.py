@@ -193,6 +193,7 @@ CONF_OPEN_DURATION = "open_duration"
 CONF_CLOSE_DURATION = "close_duration"
 CONF_AUTO_LEARN_TIMING = "auto_learn_timing"
 CONF_POSITION_REPORT_INTERVAL = "position_report_interval"
+CONF_FORCE_ESTIMATED_POSITION = "force_estimated_position"
 
 COVER_SCHEMA = (
     cover.cover_schema(BusT4Cover, device_class="gate")
@@ -203,6 +204,7 @@ COVER_SCHEMA = (
             cv.Optional(CONF_CLOSE_DURATION, default="20s"): cv.positive_time_period_milliseconds,
             cv.Optional(CONF_AUTO_LEARN_TIMING, default=True): cv.boolean,
             cv.Optional(CONF_POSITION_REPORT_INTERVAL, default="1s"): cv.positive_time_period_milliseconds,
+            cv.Optional(CONF_FORCE_ESTIMATED_POSITION, default=False): cv.boolean,
         }
     )
 )
@@ -422,6 +424,7 @@ async def to_code(config):
         cg.add(cov.set_close_duration(cc[CONF_CLOSE_DURATION]))
         cg.add(cov.set_auto_learn_timing(cc[CONF_AUTO_LEARN_TIMING]))
         cg.add(cov.set_position_report_interval(cc[CONF_POSITION_REPORT_INTERVAL]))
+        cg.add(cov.set_force_estimated_position(cc[CONF_FORCE_ESTIMATED_POSITION]))
 
     for fc in config[CONF_FLAGS]:
         sw = await switch.new_switch(fc)
