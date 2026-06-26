@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Generate the control-unit type tables in README.md from the registries in
-components/bus_t4_control_unit/__init__.py (CONFIG_TYPES, NUMBER_TYPES,
-SELECT_TYPES, SENSOR_TYPES, BUTTON_TYPES).
+"""Generate the control-unit parameter tables in README.md from the PARAMS
+registry in components/bus_t4_control_unit/__init__.py, grouped by domain
+(switch / number / select / sensor / button).
 
 Usage:
-    python scripts/gen_switch_docs.py          # print all tables to stdout
-    python scripts/gen_switch_docs.py --patch   # update README.md in-place
+    python scripts/gen_param_docs.py           # print all tables to stdout
+    python scripts/gen_param_docs.py --patch    # update README.md in-place
 """
 import argparse
 import ast
@@ -22,19 +22,22 @@ def _const(node):
     return node.value if isinstance(node, ast.Constant) else None
 
 
-def _entries(dict_name):
-    """Yield (key, [constant-or-None per tuple element]) for a top-level dict
-    literal. Non-constant elements (e.g. _out_opts(...) calls) read as None."""
+def _params(domain):
+    """Yield (name, {field: constant-or-None}) for PARAMS rows of `domain`.
+    Non-constant field values (e.g. options=_out_opts(...)) read as None."""
     tree = ast.parse(INIT.read_text())
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, ast.Assign) and any(
-            isinstance(t, ast.Name) and t.id == dict_name for t in node.targets
+            isinstance(t, ast.Name) and t.id == "PARAMS" for t in node.targets
         ):
             for k, v in zip(node.value.keys, node.value.values):
-                elts = [_const(e) for e in v.elts] if isinstance(v, ast.Tuple) else []
-                yield _const(k), elts
+                if not isinstance(v, ast.Dict):
+                    continue
+                row = {_const(kk): _const(vv) for kk, vv in zip(v.keys, v.values)}
+                if row.get("domain") == domain:
+                    yield _const(k), row
             return
-    print(f"ERROR: {dict_name} not found in {INIT.name}", file=sys.stderr)
+    print(f"ERROR: PARAMS not found in {INIT.name}", file=sys.stderr)
     sys.exit(1)
 
 
@@ -45,36 +48,36 @@ def _md_table(header, rows):
     return "\n".join(out)
 
 
-def build_flags():
-    rows = [[f"`{k}`", e[1]] for k, e in _entries("CONFIG_TYPES")]
-    return _md_table(["`type`", "Description"], rows)
+def build_switches():
+    rows = [[f"`{k}`", r["name"]] for k, r in _params("switch")]
+    return _md_table(["`param`", "Description"], rows)
 
 
 def build_numbers():
     rows = []
-    for k, e in _entries("NUMBER_TYPES"):
-        lo, hi, name, unit = e[1], e[2], e[5], e[4] or ""
-        rows.append([f"`{k}`", name, f"{lo:g}–{hi:g} {unit}".strip()])
-    return _md_table(["`type`", "Description", "Range"], rows)
+    for k, r in _params("number"):
+        unit = r.get("unit") or ""
+        rows.append([f"`{k}`", r["name"], f"{r['min']:g}–{r['max']:g} {unit}".strip()])
+    return _md_table(["`param`", "Description", "Range"], rows)
 
 
 def build_selects():
-    rows = [[f"`{k}`", e[1]] for k, e in _entries("SELECT_TYPES")]
-    return _md_table(["`type`", "Description"], rows)
+    rows = [[f"`{k}`", r["name"]] for k, r in _params("select")]
+    return _md_table(["`param`", "Description"], rows)
 
 
 def build_sensors():
-    rows = [[f"`{k}`", e[1]] for k, e in _entries("SENSOR_TYPES")]
-    return _md_table(["`type`", "Description"], rows)
+    rows = [[f"`{k}`", r["name"]] for k, r in _params("sensor")]
+    return _md_table(["`param`", "Description"], rows)
 
 
 def build_buttons():
-    rows = [[f"`{k}`", e[2]] for k, e in _entries("BUTTON_TYPES")]
-    return _md_table(["`type`", "Description"], rows)
+    rows = [[f"`{k}`", r["name"]] for k, r in _params("button")]
+    return _md_table(["`param`", "Description"], rows)
 
 
 TABLES = [
-    ("SWITCH_TYPES", build_flags),
+    ("SWITCH_TYPES", build_switches),
     ("NUMBER_TYPES", build_numbers),
     ("SELECT_TYPES", build_selects),
     ("SENSOR_TYPES", build_sensors),

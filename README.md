@@ -178,14 +178,20 @@ bus_t4_control_unit:
     close_duration: 20s           # Initial/fallback close time
     position_report_interval: 1s  # Position update rate
     force_estimated_position: false # Debug: ignore the encoder, always use the time estimate
-  # Config flags: bare type, or a map with name/icon overrides
-  flags:
+  # One flat list of parameters by name; each becomes the right entity
+  # (switch / number / select / sensor / button), resolved from the name.
+  # Bare name, or a map to override name/icon/id.
+  expose:
     - auto_close
+    - pause_time
     - photo_close
+    - speed_opening
+    - speed_closing
     - type: surge
       name: "Starting torque"
       icon: "mdi:flash"
-  numbers: [pause_time, speed_opening, speed_closing]
+    - total_maneuvers
+    - reset_maintenance
   diagnostics: true   # controller identity: firmware / product / hardware / description
 
 # Optional: the OXI plug-in radio receiver as its own device
@@ -232,14 +238,28 @@ transport, with one or more devices declared on it.
 | `device` | id | — | A device declared in `esphome: devices:` — all of this block's entities are grouped under it as one HA device (set once, no per-entity `device_id`) |
 | `address` | hex | *auto* | Controller address override; auto-detected via `INF_WHO` when omitted |
 | `cover` | block | — | The gate cover (options below) |
-| `flags` | list | — | Config-flag `switch`es (types below) |
-| `numbers` | list | — | Numeric param `number`s (types below) |
-| `selects` | list | — | Enumerated param `select`s (types below) |
-| `sensors` | list | — | Read-only `sensor`s polled from the controller (types below) |
-| `buttons` | list | — | Action `button`s that write a fixed value (types below) |
+| `expose` | list | — | Parameters to expose, by name. Each becomes the right entity (`switch`/`number`/`select`/`sensor`/`button`), resolved from the name (types below) |
 | `diagnostics` | bool/map | — | `true` adds the controller's firmware/product/hardware/description text sensors (or a map to rename them) |
 
-Every `flags`/`numbers`/`selects`/`sensors`/`buttons` entry is a bare type name **or** a map with per-entity overrides (`name`, `icon`, `id`, …). Settable entities send a SET on change and also track GET/SET replies on the bus, so changes made elsewhere (Oview, another client) are reflected immediately. A param the controller doesn't support shows as unavailable.
+Every `expose` entry is a built-in param name — bare (`auto_close`) or a map with per-entity overrides (`{param: auto_close, name: …, icon: …, id: …}`). The entity type (switch/number/select/sensor/button) is resolved from the name (names are unique across types). Settable entities send a SET on change and also track GET/SET replies on the bus, so changes made elsewhere (Oview, another client) are reflected immediately. A param the controller doesn't support shows as unavailable.
+
+**Custom parameters.** To expose a parameter not in the built-in tables below, define it inline with `byte` + `domain` instead of `param`:
+
+```yaml
+expose:
+  - byte: 0x77            # raw parameter address
+    domain: number        # switch | number | select | sensor | button
+    name: "My parameter"
+    min: 0                # number: min/max required; step/unit/width/scale optional
+    max: 100
+    unit: "%"
+  - byte: 0x53
+    domain: select
+    name: "Output 3"
+    options: [[0, "None"], [2, "Gate open"]]   # [raw, label] pairs
+```
+
+Required tail per domain: number → `min`,`max` (+ optional `step`=1, `unit`, `width`=1, `scale`=1); select → `options`; button → `value`; sensor → optional `width`=1; switch → none. ⚠️ A custom entry writes the raw byte to the controller with no range checks — same risk class as the `debug_request` action below. Find addresses with `debug_request` or gashtaan's parameter table.
 
 `cover` options: `name` (defaults to `""`, which makes the cover inherit its device name), `auto_learn_timing` (`true`), `open_duration` (`20s`), `close_duration` (`20s`), `position_report_interval` (`1s`), `force_estimated_position` (`false`; debug — ignore the encoder and always report the time-based estimate, at `position_report_interval` cadence).
 
@@ -256,17 +276,22 @@ bus_t4:
   id: bus
 bus_t4_control_unit:
   bus_t4_id: bus
-  flags: [photo_close, auto_close]
-  numbers: [pause_time, standby_time]
-  selects: [step_by_step, standby_mode]
-  sensors: [total_maneuvers]
-  buttons: [reset_maintenance]
+  expose:
+    - photo_close
+    - auto_close
+    - pause_time
+    - standby
+    - standby_mode
+    - standby_time
+    - step_by_step
+    - total_maneuvers
+    - reset_maintenance
 ```
 
-##### `flags` types (`switch`)
+##### Switch params (`switch`)
 
 <!-- BEGIN SWITCH_TYPES -->
-| `type` | Description |
+| `param` | Description |
 |---|---|
 | `auto_close` | Auto-close |
 | `photo_close` | Close after photo |
@@ -281,10 +306,10 @@ bus_t4_control_unit:
 | `decelerations` | Decelerations |
 <!-- END SWITCH_TYPES -->
 
-##### `numbers` types (`number`)
+##### Number params (`number`)
 
 <!-- BEGIN NUMBER_TYPES -->
-| `type` | Description | Range |
+| `param` | Description | Range |
 |---|---|---|
 | `pause_time` | Auto-close pause time | 0–240 s |
 | `speed_opening` | Speed (opening) | 25–100 % |
@@ -311,10 +336,10 @@ bus_t4_control_unit:
 | `brief_reversal` | Brief reversal | 0.5–5 s |
 <!-- END NUMBER_TYPES -->
 
-##### `selects` types (`select`)
+##### Select params (`select`)
 
 <!-- BEGIN SELECT_TYPES -->
-| `type` | Description |
+| `param` | Description |
 |---|---|
 | `step_by_step` | Step-by-Step mode |
 | `output_1` | Output 1 function |
@@ -329,19 +354,19 @@ bus_t4_control_unit:
 | `standby_mode` | Stand-by mode |
 <!-- END SELECT_TYPES -->
 
-##### `sensors` types (`sensor`, read-only)
+##### Sensor params (`sensor`, read-only)
 
 <!-- BEGIN SENSOR_TYPES -->
-| `type` | Description |
+| `param` | Description |
 |---|---|
 | `maintenance_count` | Maintenance counter |
 | `total_maneuvers` | Total maneuvers |
 <!-- END SENSOR_TYPES -->
 
-##### `buttons` types (`button`, momentary)
+##### Button params (`button`, momentary)
 
 <!-- BEGIN BUTTON_TYPES -->
-| `type` | Description |
+| `param` | Description |
 |---|---|
 | `reset_maintenance` | Reset maintenance counter |
 <!-- END BUTTON_TYPES -->
@@ -388,11 +413,13 @@ lock:
 
 ### Raw Configuration Parameters
 
-`send_config_set()` writes any controller parameter by its raw hex address — it's
-the same call the `number` and `switch` platforms make under the hood. A good way
-to get a feel for it is to drive a parameter you already have as a platform type,
-e.g. opening/closing speed (`0x42`/`0x43`, the params the `speed_opening` /
-`speed_closing` numbers wrap), and watch the built-in number track your changes:
+The first-class way to expose a parameter not in the built-in tables is a **custom
+`expose` entry** (`byte` + `domain`, see [Custom parameters](#bus_t4_control_unit-device))
+— you get a real switch/number/select with GET/SET tracking and no lambdas.
+
+For one-off pokes you can still call `send_config_set()` directly from a lambda —
+it writes any parameter by raw hex address (the same call the entities make under
+the hood):
 
 ```yaml
 number:
@@ -402,13 +429,6 @@ number:
     max_value: 100
     set_action:
       - lambda: 'id(gate).send_config_set(0x42, (uint8_t)x);'
-
-  - platform: template
-    name: "Closing speed (raw)"   # 0x43
-    min_value: 25
-    max_value: 100
-    set_action:
-      - lambda: 'id(gate).send_config_set(0x43, (uint8_t)x);'
 ```
 
 Multi-byte parameters take a width: `send_config_set(param, (uint16_t)x, 2)`. Find

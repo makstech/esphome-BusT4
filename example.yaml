@@ -79,9 +79,8 @@ bus_t4:
   diagnostics: true   # bus link health: error + timeout counters (on the node)
 
 # The control unit creates the gate cover and its config entities, and reads the
-# controller identity. A flag entry is a bare type ("auto_close") or a map with
-# name/icon overrides. Toggling a flag sends a SET and also tracks GET/SET replies
-# on the bus, so changes made via Oview or another client are reflected immediately.
+# controller identity. Settable entities send a SET on change and track GET/SET
+# replies on the bus, so changes made via Oview or another client show immediately.
 bus_t4_control_unit:
   bus_t4_id: bus
   device: cu_dev
@@ -91,16 +90,24 @@ bus_t4_control_unit:
     open_duration: 20s
     close_duration: 20s
     position_report_interval: 1s
-  flags:
+  # One flat list of parameters by name; each becomes the right entity
+  # (switch / number / select / sensor / button), resolved from the name.
+  # Bare name, or a map to override name/icon/id.
+  expose:
     - auto_close
+    - pause_time
     - photo_close
-    - always_close
     - standby
     - surge
     - pre_flash
-    - { type: disable_internal_radio, name: "Radio off", icon: "mdi:radio-off" }
-  # Numeric params (range + unit come from the controller)
-  numbers: [pause_time, speed_opening, speed_closing, force_opening, force_closing]
+    - { param: disable_internal_radio, name: "Radio off", icon: "mdi:radio-off" }
+    - step_by_step
+    - speed_opening
+    - speed_closing
+    - force_opening
+    - force_closing
+    - total_maneuvers
+    - reset_maintenance
   diagnostics: true     # control-unit identity: firmware / product / hardware / description
 
 # Optional: the OXI plug-in radio receiver as its own device (identity sensors).

@@ -8,7 +8,6 @@ from esphome.const import (
     CONF_ID,
     CONF_MODE,
     CONF_NAME,
-    CONF_TYPE,
     CONF_UNIT_OF_MEASUREMENT,
     ENTITY_CATEGORY_CONFIG,
     ENTITY_CATEGORY_DIAGNOSTIC,
@@ -33,65 +32,6 @@ BusT4Button = bus_t4_control_unit_ns.class_("BusT4Button", button.Button, cg.Com
 Device = cg.esphome_ns.class_("Device")
 
 CONF_BUS_T4_ID = "bus_t4_id"
-
-# Config flags: YAML type -> (CFG_* byte, default name, default icon). Bytes must match CFG_* in t4_packet.h.
-CONFIG_TYPES = {
-    "auto_close": (0x80, "Auto-close", "mdi:gate-arrow-right"),
-    "photo_close": (0x84, "Close after photo", "mdi:motion-sensor"),
-    "always_close": (0x88, "Always-close", "mdi:lock"),
-    "standby": (0x8C, "Stand-by", "mdi:power-standby"),
-    "surge": (0x90, "Surge", "mdi:rocket-launch"),
-    "pre_flash": (0x94, "Pre-flashing", "mdi:alarm-light"),
-    "disable_internal_radio": (0x9B, "Disable internal radio", "mdi:radio-off"),  # on = radio off
-    "slave": (0x98, "Slave mode", "mdi:link-variant"),
-    "automation_lock": (0x9A, "Automation lock", "mdi:lock-outline"),
-    "keylock": (0x9C, "Keylock", "mdi:key-variant"),
-    "decelerations": (0xA2, "Decelerations", "mdi:car-brake-hold"),
-}
-_FLAG_ENUM = {k: v[0] for k, v in CONFIG_TYPES.items()}
-
-# Numeric params: YAML type -> (param byte, min, max, step, unit, default name, icon, width, scale).
-# min/max/step are displayed values; the displayed value is raw*scale (0.1 = tenths).
-# Ranges/units come from the controller's command-info (verified live on RBS400).
-NUMBER_TYPES = {
-    "pause_time": (0x81, 0, 240, 1, "s", "Auto-close pause time", "mdi:timer-sand", 1, 1),
-    "speed_opening": (0x42, 25, 100, 1, "%", "Speed (opening)", "mdi:speedometer", 1, 1),
-    "speed_closing": (0x43, 25, 100, 1, "%", "Speed (closing)", "mdi:speedometer-medium", 1, 1),
-    "force_opening": (0x4A, 0, 100, 1, "%", "Force (opening)", "mdi:arm-flex", 1, 1),
-    "force_closing": (0x4B, 0, 100, 1, "%", "Force (closing)", "mdi:arm-flex-outline", 1, 1),
-    "decel_speed_opening": (0x45, 25, 50, 1, "%", "Deceleration speed (opening)", "mdi:speedometer-slow", 1, 1),
-    "decel_speed_closing": (0x46, 25, 50, 1, "%", "Deceleration speed (closing)", "mdi:speedometer-slow", 1, 1),
-    "decel_force_opening": (0x4D, 0, 100, 1, "%", "Deceleration force (opening)", "mdi:arm-flex", 1, 1),
-    "decel_force_closing": (0x4E, 0, 100, 1, "%", "Deceleration force (closing)", "mdi:arm-flex-outline", 1, 1),
-    "decel_sensitivity_opening": (0x3D, 0, 100, 1, "%", "Deceleration sensitivity (opening)", "mdi:car-brake-alert", 1, 1),
-    "decel_sensitivity_closing": (0x3E, 0, 100, 1, "%", "Deceleration sensitivity (closing)", "mdi:car-brake-alert", 1, 1),
-    "maintenance_threshold": (0xB1, 100, 20000, 100, "", "Maintenance threshold", "mdi:wrench-clock", 4, 1),
-    "photo_close_time": (0x85, 0, 250, 1, "s", "Close after photo time", "mdi:timer-outline", 1, 1),
-    "always_close_time": (0x89, 0, 20, 1, "s", "Always-close time", "mdi:timer-outline", 1, 1),
-    "standby_time": (0x8D, 5, 250, 1, "s", "Stand-by time", "mdi:timer-outline", 1, 1),
-    "surge_time": (0x91, 1, 10, 0.1, "s", "Surge time", "mdi:timer-outline", 1, 0.1),
-    "pre_flash_open_time": (0x95, 1, 10, 1, "s", "Pre-flash time (opening)", "mdi:timer-outline", 1, 1),
-    "pre_flash_close_time": (0x99, 1, 10, 1, "s", "Pre-flash time (closing)", "mdi:timer-outline", 1, 1),
-    "max_work_time": (0xA7, 10, 250, 1, "s", "Maximum work time", "mdi:timer-alert-outline", 1, 1),
-    "courtesy_light_time": (0x5B, 0, 240, 1, "s", "Courtesy light time", "mdi:lightbulb-on-outline", 1, 1),
-    "electric_lock_time": (0x5A, 0.1, 10, 0.1, "s", "Electric lock time", "mdi:lock-clock", 1, 0.1),
-    "suction_cup_time": (0x5C, 0.1, 10, 0.1, "s", "Suction cup time", "mdi:magnet", 1, 0.1),
-    "brief_reversal": (0x31, 0.5, 5, 0.1, "s", "Brief reversal", "mdi:backup-restore", 1, 0.1),
-}
-_NUMBER_ENUM = {k: v[0] for k, v in NUMBER_TYPES.items()}
-
-# Read-only numeric params: YAML type -> (param byte, default name, default icon, width).
-SENSOR_TYPES = {
-    "maintenance_count": (0xB2, "Maintenance counter", "mdi:counter", 4),
-    "total_maneuvers": (0xB3, "Total maneuvers", "mdi:counter", 4),
-}
-_SENSOR_ENUM = {k: v[0] for k, v in SENSOR_TYPES.items()}
-
-# Action params: YAML type -> (param byte, value written on press, default name, default icon).
-BUTTON_TYPES = {
-    "reset_maintenance": (0xB4, 1, "Reset maintenance counter", "mdi:restart"),
-}
-_BUTTON_ENUM = {k: v[0] for k, v in BUTTON_TYPES.items()}
 
 # Output-function labels from the manual's output configuration table, raw -> label.
 _OUTPUT_FUNCTIONS = {
@@ -127,63 +67,87 @@ def _out_opts(raws):
     return [(r, _OUTPUT_FUNCTIONS[r]) for r in raws]
 
 
-# Enumerated params: YAML type -> (param byte, default name, default icon, [(raw, label), ...]).
-SELECT_TYPES = {
-    "step_by_step": (
-        0x61,
-        "Step-by-Step mode",
-        "mdi:gesture-tap-button",
-        [
-            (1, "Open-Stop-Close-Stop"),
-            (2, "Open-Stop-Close-Open"),
-            (3, "Open-Close-Open-Close"),
-            (4, "Condominium"),
-            (5, "Condominium 2"),
-            (6, "Step-by-Step 2"),
-            (7, "Hold-to-run"),
-            (8, "Semi-automatic"),
-        ],
-    ),
-    "output_1": (0x51, "Output 1 function", "mdi:electric-switch", _out_opts(_OUT_FULL)),
-    "output_2": (0x52, "Output 2 function", "mdi:electric-switch", _out_opts(_OUT_FULL)),
-    "output_3": (0x53, "Output 3 function", "mdi:electric-switch", _out_opts(_OUT_BASIC)),
-    "output_4": (0x54, "Output 4 function", "mdi:electric-switch", _out_opts(_OUT_BASIC)),
-    "output_5": (0x55, "Output 5 function", "mdi:electric-switch", _out_opts(_OUT_BASIC)),
-    "output_6": (0x56, "Output 6 function", "mdi:electric-switch", _out_opts(_OUT_BASIC)),
-    "maintenance_management": (
-        0xB0,
-        "Maintenance management",
-        "mdi:wrench-cog",
-        [(4, "Manual"), (5, "Automatic")],
-    ),
-    "photo_close_mode": (
-        0x86,
-        "Close after photo mode",
-        "mdi:gate-open",
-        [(16, "Open fully"), (17, "Open until disengagement")],
-    ),
-    "always_close_mode": (
-        0x8A,
-        "Always-close mode",
-        "mdi:gate-alert",
-        [(32, "Always close"), (33, "Save closing")],
-    ),
-    "standby_mode": (
-        0x8E,
-        "Stand-by mode",
-        "mdi:sleep",
-        [(48, "BlueBus"), (49, "Safety devices"), (50, "All"), (56, "All, Wi-Fi on")],
-    ),
+DOMAINS = ("switch", "number", "select", "sensor", "button")
+
+# Built-in parameter presets. name -> {byte, domain, name, icon, + domain fields}:
+#   number: min, max, step (default 1), unit (default ""), width (1), scale (1)
+#   select: options [(raw, label), ...]
+#   sensor: width (default 1)
+#   button: value (written on press)
+# Bytes must match the protocol; switch bytes are the CFG_* flags in t4_packet.h.
+# Ranges/units verified live on RBS400. A user can define params not listed here
+# inline in `expose:` with `byte` + `domain` (see _custom_row / README).
+PARAMS = {
+    # Switches (CFG_* flag bytes)
+    "auto_close": {"byte": 0x80, "domain": "switch", "name": "Auto-close", "icon": "mdi:gate-arrow-right"},
+    "photo_close": {"byte": 0x84, "domain": "switch", "name": "Close after photo", "icon": "mdi:motion-sensor"},
+    "always_close": {"byte": 0x88, "domain": "switch", "name": "Always-close", "icon": "mdi:lock"},
+    "standby": {"byte": 0x8C, "domain": "switch", "name": "Stand-by", "icon": "mdi:power-standby"},
+    "surge": {"byte": 0x90, "domain": "switch", "name": "Surge", "icon": "mdi:rocket-launch"},
+    "pre_flash": {"byte": 0x94, "domain": "switch", "name": "Pre-flashing", "icon": "mdi:alarm-light"},
+    "disable_internal_radio": {"byte": 0x9B, "domain": "switch", "name": "Disable internal radio", "icon": "mdi:radio-off"},  # on = radio off
+    "slave": {"byte": 0x98, "domain": "switch", "name": "Slave mode", "icon": "mdi:link-variant"},
+    "automation_lock": {"byte": 0x9A, "domain": "switch", "name": "Automation lock", "icon": "mdi:lock-outline"},
+    "keylock": {"byte": 0x9C, "domain": "switch", "name": "Keylock", "icon": "mdi:key-variant"},
+    "decelerations": {"byte": 0xA2, "domain": "switch", "name": "Decelerations", "icon": "mdi:car-brake-hold"},
+    # Numbers
+    "pause_time": {"byte": 0x81, "domain": "number", "name": "Auto-close pause time", "icon": "mdi:timer-sand", "min": 0, "max": 240, "unit": "s"},
+    "speed_opening": {"byte": 0x42, "domain": "number", "name": "Speed (opening)", "icon": "mdi:speedometer", "min": 25, "max": 100, "unit": "%"},
+    "speed_closing": {"byte": 0x43, "domain": "number", "name": "Speed (closing)", "icon": "mdi:speedometer-medium", "min": 25, "max": 100, "unit": "%"},
+    "force_opening": {"byte": 0x4A, "domain": "number", "name": "Force (opening)", "icon": "mdi:arm-flex", "min": 0, "max": 100, "unit": "%"},
+    "force_closing": {"byte": 0x4B, "domain": "number", "name": "Force (closing)", "icon": "mdi:arm-flex-outline", "min": 0, "max": 100, "unit": "%"},
+    "decel_speed_opening": {"byte": 0x45, "domain": "number", "name": "Deceleration speed (opening)", "icon": "mdi:speedometer-slow", "min": 25, "max": 50, "unit": "%"},
+    "decel_speed_closing": {"byte": 0x46, "domain": "number", "name": "Deceleration speed (closing)", "icon": "mdi:speedometer-slow", "min": 25, "max": 50, "unit": "%"},
+    "decel_force_opening": {"byte": 0x4D, "domain": "number", "name": "Deceleration force (opening)", "icon": "mdi:arm-flex", "min": 0, "max": 100, "unit": "%"},
+    "decel_force_closing": {"byte": 0x4E, "domain": "number", "name": "Deceleration force (closing)", "icon": "mdi:arm-flex-outline", "min": 0, "max": 100, "unit": "%"},
+    "decel_sensitivity_opening": {"byte": 0x3D, "domain": "number", "name": "Deceleration sensitivity (opening)", "icon": "mdi:car-brake-alert", "min": 0, "max": 100, "unit": "%"},
+    "decel_sensitivity_closing": {"byte": 0x3E, "domain": "number", "name": "Deceleration sensitivity (closing)", "icon": "mdi:car-brake-alert", "min": 0, "max": 100, "unit": "%"},
+    "maintenance_threshold": {"byte": 0xB1, "domain": "number", "name": "Maintenance threshold", "icon": "mdi:wrench-clock", "min": 100, "max": 20000, "step": 100, "width": 4},
+    "photo_close_time": {"byte": 0x85, "domain": "number", "name": "Close after photo time", "icon": "mdi:timer-outline", "min": 0, "max": 250, "unit": "s"},
+    "always_close_time": {"byte": 0x89, "domain": "number", "name": "Always-close time", "icon": "mdi:timer-outline", "min": 0, "max": 20, "unit": "s"},
+    "standby_time": {"byte": 0x8D, "domain": "number", "name": "Stand-by time", "icon": "mdi:timer-outline", "min": 5, "max": 250, "unit": "s"},
+    "surge_time": {"byte": 0x91, "domain": "number", "name": "Surge time", "icon": "mdi:timer-outline", "min": 1, "max": 10, "step": 0.1, "unit": "s", "scale": 0.1},
+    "pre_flash_open_time": {"byte": 0x95, "domain": "number", "name": "Pre-flash time (opening)", "icon": "mdi:timer-outline", "min": 1, "max": 10, "unit": "s"},
+    "pre_flash_close_time": {"byte": 0x99, "domain": "number", "name": "Pre-flash time (closing)", "icon": "mdi:timer-outline", "min": 1, "max": 10, "unit": "s"},
+    "max_work_time": {"byte": 0xA7, "domain": "number", "name": "Maximum work time", "icon": "mdi:timer-alert-outline", "min": 10, "max": 250, "unit": "s"},
+    "courtesy_light_time": {"byte": 0x5B, "domain": "number", "name": "Courtesy light time", "icon": "mdi:lightbulb-on-outline", "min": 0, "max": 240, "unit": "s"},
+    "electric_lock_time": {"byte": 0x5A, "domain": "number", "name": "Electric lock time", "icon": "mdi:lock-clock", "min": 0.1, "max": 10, "step": 0.1, "unit": "s", "scale": 0.1},
+    "suction_cup_time": {"byte": 0x5C, "domain": "number", "name": "Suction cup time", "icon": "mdi:magnet", "min": 0.1, "max": 10, "step": 0.1, "unit": "s", "scale": 0.1},
+    "brief_reversal": {"byte": 0x31, "domain": "number", "name": "Brief reversal", "icon": "mdi:backup-restore", "min": 0.5, "max": 5, "step": 0.1, "unit": "s", "scale": 0.1},
+    # Selects
+    "step_by_step": {"byte": 0x61, "domain": "select", "name": "Step-by-Step mode", "icon": "mdi:gesture-tap-button", "options": [
+        (1, "Open-Stop-Close-Stop"),
+        (2, "Open-Stop-Close-Open"),
+        (3, "Open-Close-Open-Close"),
+        (4, "Condominium"),
+        (5, "Condominium 2"),
+        (6, "Step-by-Step 2"),
+        (7, "Hold-to-run"),
+        (8, "Semi-automatic"),
+    ]},
+    "output_1": {"byte": 0x51, "domain": "select", "name": "Output 1 function", "icon": "mdi:electric-switch", "options": _out_opts(_OUT_FULL)},
+    "output_2": {"byte": 0x52, "domain": "select", "name": "Output 2 function", "icon": "mdi:electric-switch", "options": _out_opts(_OUT_FULL)},
+    "output_3": {"byte": 0x53, "domain": "select", "name": "Output 3 function", "icon": "mdi:electric-switch", "options": _out_opts(_OUT_BASIC)},
+    "output_4": {"byte": 0x54, "domain": "select", "name": "Output 4 function", "icon": "mdi:electric-switch", "options": _out_opts(_OUT_BASIC)},
+    "output_5": {"byte": 0x55, "domain": "select", "name": "Output 5 function", "icon": "mdi:electric-switch", "options": _out_opts(_OUT_BASIC)},
+    "output_6": {"byte": 0x56, "domain": "select", "name": "Output 6 function", "icon": "mdi:electric-switch", "options": _out_opts(_OUT_BASIC)},
+    "maintenance_management": {"byte": 0xB0, "domain": "select", "name": "Maintenance management", "icon": "mdi:wrench-cog", "options": [(4, "Manual"), (5, "Automatic")]},
+    "photo_close_mode": {"byte": 0x86, "domain": "select", "name": "Close after photo mode", "icon": "mdi:gate-open", "options": [(16, "Open fully"), (17, "Open until disengagement")]},
+    "always_close_mode": {"byte": 0x8A, "domain": "select", "name": "Always-close mode", "icon": "mdi:gate-alert", "options": [(32, "Always close"), (33, "Save closing")]},
+    "standby_mode": {"byte": 0x8E, "domain": "select", "name": "Stand-by mode", "icon": "mdi:sleep", "options": [(48, "BlueBus"), (49, "Safety devices"), (50, "All"), (56, "All, Wi-Fi on")]},
+    # Sensors (read-only)
+    "maintenance_count": {"byte": 0xB2, "domain": "sensor", "name": "Maintenance counter", "icon": "mdi:counter", "width": 4},
+    "total_maneuvers": {"byte": 0xB3, "domain": "sensor", "name": "Total maneuvers", "icon": "mdi:counter", "width": 4},
+    # Buttons (write a fixed value on press)
+    "reset_maintenance": {"byte": 0xB4, "domain": "button", "name": "Reset maintenance counter", "icon": "mdi:restart", "value": 1},
 }
-_SELECT_ENUM = {k: v[0] for k, v in SELECT_TYPES.items()}
 
 CONF_DEVICE = "device"
 CONF_COVER = "cover"
-CONF_FLAGS = "flags"
-CONF_NUMBERS = "numbers"
-CONF_SELECTS = "selects"
-CONF_SENSORS = "sensors"
-CONF_BUTTONS = "buttons"
+CONF_EXPOSE = "expose"
+CONF_PARAM = "param"
+CONF_DOMAIN = "domain"
+CONF_BYTE = "byte"
 CONF_DIAGNOSTICS = "diagnostics"
 CONF_FIRMWARE = "firmware"
 CONF_PRODUCT = "product"
@@ -194,6 +158,11 @@ CONF_CLOSE_DURATION = "close_duration"
 CONF_AUTO_LEARN_TIMING = "auto_learn_timing"
 CONF_POSITION_REPORT_INTERVAL = "position_report_interval"
 CONF_FORCE_ESTIMATED_POSITION = "force_estimated_position"
+
+# Resolved-definition keys carried alongside the entity config for to_code; not
+# part of any entity schema, so stripped before validating the entity.
+CONF_DEF = "param_def"
+_DEF_KEYS = {CONF_PARAM, CONF_BYTE, CONF_DOMAIN, "min", "max", "step", "unit", "width", "scale", "options", "value"}
 
 COVER_SCHEMA = (
     cover.cover_schema(BusT4Cover, device_class="gate")
@@ -217,114 +186,95 @@ def _cover(value):
         value.setdefault(CONF_NAME, "")
     return COVER_SCHEMA(value)
 
-FLAG_SCHEMA = (
-    switch.switch_schema(
-        BusT4Switch,
-        entity_category=ENTITY_CATEGORY_CONFIG,
-        default_restore_mode="DISABLED",
-    )
-    .extend(cv.COMPONENT_SCHEMA)
-    .extend({cv.Required(CONF_TYPE): cv.enum(_FLAG_ENUM, lower=True)})
-)
+
+# Entity schemas, one per domain. The param/byte/range live in the definition
+# (PARAMS or an inline custom row), so these carry no `type` field.
+_DOMAIN_SCHEMA = {
+    "switch": switch.switch_schema(
+        BusT4Switch, entity_category=ENTITY_CATEGORY_CONFIG, default_restore_mode="DISABLED"
+    ).extend(cv.COMPONENT_SCHEMA),
+    "number": number.number_schema(BusT4Number, entity_category=ENTITY_CATEGORY_CONFIG).extend(cv.COMPONENT_SCHEMA),
+    "select": select.select_schema(BusT4Select, entity_category=ENTITY_CATEGORY_CONFIG).extend(cv.COMPONENT_SCHEMA),
+    "sensor": sensor.sensor_schema(
+        BusT4Sensor, accuracy_decimals=0, state_class="total_increasing", entity_category=ENTITY_CATEGORY_DIAGNOSTIC
+    ).extend(cv.polling_component_schema("60s")),
+    "button": button.button_schema(BusT4Button, entity_category=ENTITY_CATEGORY_CONFIG).extend(cv.COMPONENT_SCHEMA),
+}
 
 
-def _flag(value):
-    # Accept a bare type ("auto_close") or a full map; inject the default name and
-    # icon from CONFIG_TYPES (switch_schema requires id or name). A map can override.
+def _option(o):
+    o = list(o)
+    if len(o) != 2:
+        raise cv.Invalid("each select option must be [raw_value, label]")
+    return (cv.int_(o[0]), cv.string(o[1]))
+
+
+def _custom_row(value):
+    # An inline param definition: `byte` + `domain` + the domain's fields. Lets a
+    # user expose a parameter that isn't in the PARAMS catalog.
+    domain = cv.one_of(*DOMAINS, lower=True)(value[CONF_DOMAIN])
+    if CONF_PARAM in value:
+        raise cv.Invalid("use either `param` (a built-in) or `byte`+`domain` (custom), not both")
+    if CONF_BYTE not in value:
+        raise cv.Invalid("a custom param requires `byte`")
+    row = {"byte": cv.hex_uint8_t(value[CONF_BYTE]), "domain": domain, "name": value.get(CONF_NAME)}
+    if CONF_ICON in value:
+        row["icon"] = value[CONF_ICON]
+    if domain == "number":
+        for req in ("min", "max"):
+            if req not in value:
+                raise cv.Invalid(f"a custom number requires `{req}`")
+        row["min"] = value["min"]
+        row["max"] = value["max"]
+        row["step"] = value.get("step", 1)
+        row["unit"] = value.get("unit", "")
+        row["width"] = cv.int_range(1, 4)(value.get("width", 1))
+        row["scale"] = value.get("scale", 1)
+    elif domain == "select":
+        if "options" not in value:
+            raise cv.Invalid("a custom select requires `options` ([raw, label] pairs)")
+        row["options"] = [_option(o) for o in value["options"]]
+    elif domain == "sensor":
+        row["width"] = cv.int_range(1, 4)(value.get("width", 1))
+    elif domain == "button":
+        if "value" not in value:
+            raise cv.Invalid("a custom button requires `value` (written on press)")
+        row["value"] = value["value"]
+    return row
+
+
+def _expose(value):
+    # One flat list of parameters. An entry is a built-in name (bare or
+    # {param: name, ...overrides}), or a custom definition ({byte:, domain:, ...}).
+    # The resolved definition is stashed under CONF_DEF for to_code.
     if not isinstance(value, dict):
-        value = {CONF_TYPE: value}
-    key = str(value.get(CONF_TYPE, "")).lower()
-    if key in CONFIG_TYPES:
-        value.setdefault(CONF_NAME, CONFIG_TYPES[key][1])
-        value.setdefault(CONF_ICON, CONFIG_TYPES[key][2])
-    return FLAG_SCHEMA(value)
+        value = {CONF_PARAM: value}
+    value = dict(value)
 
+    if CONF_DOMAIN in value or CONF_BYTE in value:
+        row = _custom_row(value)
+    else:
+        name = str(value.get(CONF_PARAM, "")).lower()
+        if name not in PARAMS:
+            raise cv.Invalid(
+                f"Unknown parameter '{name}'. Valid: {', '.join(sorted(PARAMS))}. "
+                f"For a parameter not listed, define it inline with `byte` and `domain`."
+            )
+        row = PARAMS[name]
 
-NUMBER_SCHEMA = (
-    number.number_schema(BusT4Number, entity_category=ENTITY_CATEGORY_CONFIG)
-    .extend(cv.COMPONENT_SCHEMA)
-    .extend({cv.Required(CONF_TYPE): cv.enum(_NUMBER_ENUM, lower=True)})
-)
+    domain = row["domain"]
+    entity = {k: v for k, v in value.items() if k not in _DEF_KEYS}
+    if row.get("name"):
+        entity.setdefault(CONF_NAME, row["name"])
+    if row.get("icon"):
+        entity.setdefault(CONF_ICON, row["icon"])
+    if domain == "number":
+        entity.setdefault(CONF_UNIT_OF_MEASUREMENT, row.get("unit", ""))
+        entity.setdefault(CONF_MODE, "box")
 
-
-def _number(value):
-    # Bare type ("pause_time") or a map; inject the default name + unit from
-    # NUMBER_TYPES before validating (number_schema requires id or name).
-    if not isinstance(value, dict):
-        value = {CONF_TYPE: value}
-    key = str(value.get(CONF_TYPE, "")).lower()
-    if key in NUMBER_TYPES:
-        spec = NUMBER_TYPES[key]
-        value.setdefault(CONF_NAME, spec[5])
-        value.setdefault(CONF_UNIT_OF_MEASUREMENT, spec[4])
-        value.setdefault(CONF_ICON, spec[6])
-        value.setdefault(CONF_MODE, "box")
-    return NUMBER_SCHEMA(value)
-
-
-SELECT_SCHEMA = (
-    select.select_schema(BusT4Select, entity_category=ENTITY_CATEGORY_CONFIG)
-    .extend(cv.COMPONENT_SCHEMA)
-    .extend({cv.Required(CONF_TYPE): cv.enum(_SELECT_ENUM, lower=True)})
-)
-
-
-def _select(value):
-    # Bare type ("step_by_step") or a map; inject the default name + icon from
-    # SELECT_TYPES before validating (select_schema requires id or name).
-    if not isinstance(value, dict):
-        value = {CONF_TYPE: value}
-    key = str(value.get(CONF_TYPE, "")).lower()
-    if key in SELECT_TYPES:
-        spec = SELECT_TYPES[key]
-        value.setdefault(CONF_NAME, spec[1])
-        value.setdefault(CONF_ICON, spec[2])
-    return SELECT_SCHEMA(value)
-
-
-SENSOR_SCHEMA = (
-    sensor.sensor_schema(
-        BusT4Sensor,
-        accuracy_decimals=0,
-        state_class="total_increasing",
-        entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
-    )
-    .extend(cv.polling_component_schema("60s"))
-    .extend({cv.Required(CONF_TYPE): cv.enum(_SENSOR_ENUM, lower=True)})
-)
-
-
-def _sensor(value):
-    # Bare type ("total_maneuvers") or a map; inject the default name + icon from
-    # SENSOR_TYPES before validating (sensor_schema requires id or name).
-    if not isinstance(value, dict):
-        value = {CONF_TYPE: value}
-    key = str(value.get(CONF_TYPE, "")).lower()
-    if key in SENSOR_TYPES:
-        spec = SENSOR_TYPES[key]
-        value.setdefault(CONF_NAME, spec[1])
-        value.setdefault(CONF_ICON, spec[2])
-    return SENSOR_SCHEMA(value)
-
-
-BUTTON_SCHEMA = (
-    button.button_schema(BusT4Button, entity_category=ENTITY_CATEGORY_CONFIG)
-    .extend(cv.COMPONENT_SCHEMA)
-    .extend({cv.Required(CONF_TYPE): cv.enum(_BUTTON_ENUM, lower=True)})
-)
-
-
-def _button(value):
-    # Bare type ("reset_maintenance") or a map; inject the default name + icon
-    # from BUTTON_TYPES before validating (button_schema requires id or name).
-    if not isinstance(value, dict):
-        value = {CONF_TYPE: value}
-    key = str(value.get(CONF_TYPE, "")).lower()
-    if key in BUTTON_TYPES:
-        spec = BUTTON_TYPES[key]
-        value.setdefault(CONF_NAME, spec[2])
-        value.setdefault(CONF_ICON, spec[3])
-    return BUTTON_SCHEMA(value)
+    validated = _DOMAIN_SCHEMA[domain](entity)
+    validated[CONF_DEF] = row
+    return validated
 
 
 _DIAG_DEFAULTS = {
@@ -352,7 +302,7 @@ def _diagnostics(value):
 def _with_device(entry, dev):
     # Stamp an entity entry with device_id so its name uniqueness is checked
     # per-device (lets the same name appear on the CU and OXI devices).
-    entry = {CONF_TYPE: entry} if not isinstance(entry, dict) else dict(entry)
+    entry = {CONF_PARAM: entry} if not isinstance(entry, dict) else dict(entry)
     entry.setdefault(CONF_DEVICE_ID, dev)
     return entry
 
@@ -365,9 +315,8 @@ def _assign_device(config):
     if dev is None:
         return config
     config = dict(config)
-    for key in (CONF_FLAGS, CONF_NUMBERS, CONF_SELECTS, CONF_SENSORS, CONF_BUTTONS):
-        if isinstance(config.get(key), list):
-            config[key] = [_with_device(e, dev) for e in config[key]]
+    if isinstance(config.get(CONF_EXPOSE), list):
+        config[CONF_EXPOSE] = [_with_device(e, dev) for e in config[CONF_EXPOSE]]
     if isinstance(config.get(CONF_COVER), dict):
         config[CONF_COVER] = _with_device(config[CONF_COVER], dev)
     if CONF_DIAGNOSTICS in config:
@@ -392,11 +341,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_DEVICE): cv.use_id(Device),  # group all CU entities under this device
             cv.Optional(CONF_ADDRESS): cv.hex_uint16_t,  # control-unit address override
             cv.Optional(CONF_COVER): _cover,
-            cv.Optional(CONF_FLAGS, default=[]): cv.ensure_list(_flag),
-            cv.Optional(CONF_NUMBERS, default=[]): cv.ensure_list(_number),
-            cv.Optional(CONF_SELECTS, default=[]): cv.ensure_list(_select),
-            cv.Optional(CONF_SENSORS, default=[]): cv.ensure_list(_sensor),
-            cv.Optional(CONF_BUTTONS, default=[]): cv.ensure_list(_button),
+            cv.Optional(CONF_EXPOSE, default=[]): cv.ensure_list(_expose),
             cv.Optional(CONF_DIAGNOSTICS): _diagnostics,
         }
     ),
@@ -426,54 +371,60 @@ async def to_code(config):
         cg.add(cov.set_position_report_interval(cc[CONF_POSITION_REPORT_INTERVAL]))
         cg.add(cov.set_force_estimated_position(cc[CONF_FORCE_ESTIMATED_POSITION]))
 
-    for fc in config[CONF_FLAGS]:
+    expose = config[CONF_EXPOSE]
+
+    def of(domain):
+        return [e for e in expose if e[CONF_DEF]["domain"] == domain]
+
+    for fc in of("switch"):
+        d = fc[CONF_DEF]
         sw = await switch.new_switch(fc)
         await cg.register_component(sw, fc)
         cg.add(sw.set_parent(bus))
         if cu_address is not None:
             cg.add(sw.set_target_address(cu_address))
-        cg.add(sw.set_param(fc[CONF_TYPE]))
+        cg.add(sw.set_param(d["byte"]))
 
-    for nc in config[CONF_NUMBERS]:
-        # cv.enum keeps the type name; look up its spec, then pass the byte to set_param.
-        byte, nmin, nmax, nstep, _unit, _name, _icon, width, scale = NUMBER_TYPES[str(nc[CONF_TYPE])]
-        num = await number.new_number(nc, min_value=nmin, max_value=nmax, step=nstep)
+    for nc in of("number"):
+        d = nc[CONF_DEF]
+        num = await number.new_number(nc, min_value=d["min"], max_value=d["max"], step=d.get("step", 1))
         await cg.register_component(num, nc)
         cg.add(num.set_parent(bus))
         if cu_address is not None:
             cg.add(num.set_target_address(cu_address))
-        cg.add(num.set_param(byte))
-        cg.add(num.set_width(width))
-        cg.add(num.set_scale(scale))
+        cg.add(num.set_param(d["byte"]))
+        cg.add(num.set_width(d.get("width", 1)))
+        cg.add(num.set_scale(d.get("scale", 1)))
 
-    for nc in config[CONF_SENSORS]:
-        byte, _name, _icon, width = SENSOR_TYPES[str(nc[CONF_TYPE])]
+    for nc in of("sensor"):
+        d = nc[CONF_DEF]
         sen = await sensor.new_sensor(nc)
         await cg.register_component(sen, nc)
         cg.add(sen.set_parent(bus))
         if cu_address is not None:
             cg.add(sen.set_target_address(cu_address))
-        cg.add(sen.set_param(byte))
-        cg.add(sen.set_width(width))
+        cg.add(sen.set_param(d["byte"]))
+        cg.add(sen.set_width(d.get("width", 1)))
 
-    for bc in config[CONF_BUTTONS]:
-        byte, val, _name, _icon = BUTTON_TYPES[str(bc[CONF_TYPE])]
+    for bc in of("button"):
+        d = bc[CONF_DEF]
         btn = await button.new_button(bc)
         await cg.register_component(btn, bc)
         cg.add(btn.set_parent(bus))
         if cu_address is not None:
             cg.add(btn.set_target_address(cu_address))
-        cg.add(btn.set_param(byte))
-        cg.add(btn.set_value(val))
+        cg.add(btn.set_param(d["byte"]))
+        cg.add(btn.set_value(d["value"]))
 
-    for sc in config[CONF_SELECTS]:
-        byte, _name, _icon, opts = SELECT_TYPES[str(sc[CONF_TYPE])]
+    for sc in of("select"):
+        d = sc[CONF_DEF]
+        opts = d["options"]
         sel = await select.new_select(sc, options=[label for _raw, label in opts])
         await cg.register_component(sel, sc)
         cg.add(sel.set_parent(bus))
         if cu_address is not None:
             cg.add(sel.set_target_address(cu_address))
-        cg.add(sel.set_param(byte))
+        cg.add(sel.set_param(d["byte"]))
         for raw, _label in opts:
             cg.add(sel.add_option_value(raw))
 
