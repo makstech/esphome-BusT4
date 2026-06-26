@@ -25,9 +25,6 @@ using enum bus_t4::T4OperationStatus;
 
 class BusT4ControlUnit;
 
-// Position update interval during movement (ms)
-static constexpr uint32_t POSITION_UPDATE_INTERVAL = 500;
-
 // Position threshold below which cover is considered fully closed
 static constexpr float CLOSED_POSITION_THRESHOLD = 0.007f;
 

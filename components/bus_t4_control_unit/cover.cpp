@@ -496,57 +496,6 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       break;
     }
 
-    case INF_IO: {
-      // Input/Output state - includes limit switches
-      // Limit switch state is at data[16] = DATA_OFFSET + 4
-      // This is consistent across most Nice controllers
-      const uint8_t IO_LIMIT_OFFSET = DATA_OFFSET + 4;  // = 16
-
-      // Log raw data for debugging
-      ESP_LOGD(TAG, "INF_IO raw: %02X %02X %02X %02X %02X",
-               packet.data[DATA_OFFSET], packet.data[DATA_OFFSET + 1],
-               packet.data[DATA_OFFSET + 2], packet.data[DATA_OFFSET + 3],
-               packet.data[DATA_OFFSET + 4]);
-
-      // Check if we have enough data for the limit switch byte
-      if (packet.size > IO_LIMIT_OFFSET) {
-        uint8_t limit_state = packet.data[IO_LIMIT_OFFSET];
-
-        switch (limit_state) {
-          case 0x00:
-            ESP_LOGD(TAG, "INF_IO: No limit switch active");
-            // No limit switch info - INF_STATUS will handle confirmation
-            break;
-          case 0x01:
-            ESP_LOGI(TAG, "Limit switch: CLOSED");
-            this->position = cover::COVER_CLOSED;
-            current_operation = cover::COVER_OPERATION_IDLE;
-            if (awaiting_confirmation_) {
-              ESP_LOGI(TAG, "Confirmed by limit switch: gate is fully closed");
-            }
-            awaiting_confirmation_ = false;
-            publish_state_if_changed();
-            break;
-          case 0x02:
-            ESP_LOGI(TAG, "Limit switch: OPEN");
-            this->position = cover::COVER_OPEN;
-            current_operation = cover::COVER_OPERATION_IDLE;
-            if (awaiting_confirmation_) {
-              ESP_LOGI(TAG, "Confirmed by limit switch: gate is fully open");
-            }
-            awaiting_confirmation_ = false;
-            publish_state_if_changed();
-            break;
-          default:
-            ESP_LOGD(TAG, "INF_IO: Unknown limit state 0x%02X", limit_state);
-            break;
-        }
-      } else {
-        ESP_LOGW(TAG, "INF_IO packet too short for limit switch data");
-      }
-      break;
-    }
-
   }
 }
 
@@ -610,10 +559,8 @@ void BusT4Cover::request_status() {
 
 void BusT4Cover::request_status_confirmation() {
   if (parent_ == nullptr) return;
-  ESP_LOGD(TAG, "Requesting I/O state and status for confirmation");
+  ESP_LOGD(TAG, "Requesting status for confirmation");
   awaiting_confirmation_ = true;
-  // Request both - I/O for limit switches (if supported), status as fallback
-  send_info_request(FOR_CU, INF_IO);
   send_info_request(FOR_CU, INF_STATUS);
 }
 
