@@ -78,31 +78,6 @@ enum T4InfoCommand : uint8_t {
   INF_POS_MAX = 0x18,    // Open position
   INF_POS_MIN = 0x19,    // Close position
   INF_IO = 0xD1,         // Input/output state (limit switches)
-
-  // Configuration parameters — on/off toggles.
-  // Switch platform types are defined in switch/__init__.py.
-  CFG_AUTOCLS = 0x80,     // Auto-close
-  CFG_PH_CLS = 0x84,      // Close after photo
-  CFG_ALW_CLS = 0x88,     // Always close
-  CFG_STANDBY = 0x8C,     // Standby
-  CFG_PEAK = 0x90,        // Peak
-  CFG_PRE_FLASH = 0x94,   // Pre-flashing
-  CFG_SLAVE = 0x98,        // Slave mode
-  CFG_DISABLE_RADIO = 0x9B, // Disable internal radio (on = internal radio off)
-  CFG_DECELERATIONS = 0xA2, // Deceleration phase enable
-
-  // Speed parameters (numeric, 25-100)
-  CFG_OPEN_SPEED = 0x42,  // Opening speed
-  CFG_CLOSE_SPEED = 0x43, // Closing speed
-
-  // Force parameters (numeric, 0-100%)
-  CFG_OPEN_FORCE = 0x4A,  // Opening force
-  CFG_CLOSE_FORCE = 0x4B, // Closing force
-
-  // Maintenance parameters (numeric, 4-byte)
-  CFG_MAINT_THRESHOLD = 0xB1,  // Manoeuvres before maintenance request
-  CFG_MAINT_COUNT = 0xB2,      // Manoeuvres since last maintenance
-  CFG_TOTAL_MANEUVERS = 0xB3,  // Total manoeuvres counter
 };
 
 // Request types (byte 11)

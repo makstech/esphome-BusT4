@@ -74,11 +74,11 @@ DOMAINS = ("switch", "number", "select", "sensor", "button")
 #   select: options [(raw, label), ...]
 #   sensor: width (default 1)
 #   button: value (written on press)
-# Bytes must match the protocol; switch bytes are the CFG_* flags in t4_packet.h.
+# `byte` is the raw Nice Bus-T4 parameter address.
 # Ranges/units verified live on RBS400. A user can define params not listed here
 # inline in `expose:` with `byte` + `domain` (see _custom_row / README).
 PARAMS = {
-    # Switches (CFG_* flag bytes)
+    # Switches (on/off flags)
     "auto_close": {"byte": 0x80, "domain": "switch", "name": "Auto-close", "icon": "mdi:gate-arrow-right"},
     "photo_close": {"byte": 0x84, "domain": "switch", "name": "Close after photo", "icon": "mdi:motion-sensor"},
     "always_close": {"byte": 0x88, "domain": "switch", "name": "Always-close", "icon": "mdi:lock"},
