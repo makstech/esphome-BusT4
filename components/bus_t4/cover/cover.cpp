@@ -494,6 +494,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
         ESP_LOGI(TAG, "Found motor controller at 0x%02X.%02X",
                  packet.header.from.address, packet.header.from.endpoint);
         target_address_ = packet.header.from;
+        parent_->set_controller_address(packet.header.from);  // share with other devices
         if (init_step_ == 0) {
           init_step_ = 1;  // Move to next init step
           discovery_attempts_ = 0;  // Reset backoff on success

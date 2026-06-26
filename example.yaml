@@ -46,6 +46,9 @@ uart:
 
 bus_t4:
   id: bus
+  # Set true and watch the logs to capture unmapped BlueBus packets (photocells, keypad).
+  # See the README "BlueBus events" section and debug_yaml.
+  # debug_unknown_packets: true
 
 cover:
   - platform: bus_t4
@@ -55,6 +58,30 @@ cover:
     open_duration: 20s
     close_duration: 20s
     position_report_interval: 1s
+
+# --- BlueBus events ---------------------------------------------------------
+# Keypad / command events: fires every time the control unit reports an executed
+# command on the bus (open / close / step_by_step / partial_1..3 / stop), whatever
+# the source. The command is the payload; the source (keypad vs remote vs app)
+# cannot be identified. See README.
+event:
+  - platform: bus_t4
+    name: "Gate keypad"
+    device_class: button
+
+# Photocell beam state (EXPERIMENTAL). address = photocell index 1/2/3 (PHOTO/PHOTO2/PHOTO3).
+# The 0xD0 decode is unverified — confirm against a capture before trusting it (see README).
+binary_sensor:
+  - platform: bus_t4
+    address: 1
+    name: "Photocell gate"
+    device_class: safety
+
+# Diagnostic: comma-separated list of Bus-T4 devices seen on the bus. Confirms the
+# component is talking to the controller / receiver.
+text_sensor:
+  - platform: bus_t4
+    name: "Bus devices"
 
 # Optional: Additional buttons for partial opening
 button:

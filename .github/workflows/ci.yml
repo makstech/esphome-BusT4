@@ -7,6 +7,16 @@ on:
     branches: [main]
 
 jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build and run packet parser tests
+        run: |
+          g++ -std=c++17 -Wall -Wextra tests/test_t4_packet.cpp -o t4test
+          ./t4test
+
   validate:
     runs-on: ubuntu-latest
     steps:
@@ -29,6 +39,9 @@ jobs:
 
       - name: Validate configuration
         run: esphome config example.yaml
+
+      - name: Validate capture (debug) configuration
+        run: esphome config debug_yaml
 
   build:
     runs-on: ubuntu-latest

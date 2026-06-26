@@ -1,0 +1,60 @@
+# Nice Bus-T4 — PACKET CAPTURE configuration
+#
+# Flash this to capture raw Bus-T4 packets from your hardware so undocumented
+# BlueBus events (photocells, keypads) can be mapped. See README "Capturing packets"
+# and .agent/PROTOCOL.md.
+#
+# How to use:
+#   1. esphome run debug_yaml          (flash, then it streams logs over WiFi)
+#   2. esphome logs debug_yaml          (watch the log; UART is used for the bus so
+#                                        logs come over the network, not serial)
+#   3. Trigger ONE thing at a time and note the timestamp:
+#        - block a photocell beam, then clear it
+#        - press each keypad button (Open / Close / Step / Partial / Stop)
+#   4. Copy the "[pkt] ..." lines around each action and send them back. Each line
+#      already carries a type guess + the full hex. Label which physical action you did.
+
+esphome:
+  name: gate-debug
+  friendly_name: Gate (debug)
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+    advanced:
+      minimum_chip_revision: "3.1"   # Nice BiDi-WiFi is ESP32 rev3.1; remove for other boards
+
+logger:
+  baud_rate: 0        # UART is used for Bus-T4; logs are delivered over WiFi
+  level: DEBUG        # DEBUG shows the raw RX dump; the classifier logs at INFO
+
+api:
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Gate Debug Fallback"
+    password: "fallback123"
+
+external_components:
+  - source: components
+
+uart:
+  tx_pin: GPIO21
+  rx_pin: GPIO18
+  baud_rate: 19200
+
+bus_t4:
+  id: bus
+  debug_unknown_packets: true   # <-- logs every received packet with a type guess
+
+# A cover is still needed so the controller is discovered and routine traffic flows.
+cover:
+  - platform: bus_t4
+    name: "Gate"
+    id: gate

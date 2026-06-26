@@ -19,6 +19,9 @@ ESPHome component for integrating **Nice gate and garage door automation** into 
 - ⚙️ **Motor configuration** - Control auto-close, standby, peak mode, and more via SET commands
 - 🔧 **Wide compatibility** - Device-specific handling for Walky, Robus, Road 400, and more
 - 📡 **OXI receiver logging** - Remote control button presses are logged for debugging
+- ⌨️ **Keypad / command events** - `event` entity fires on every command on the bus (open, close, step, partial, stop)
+- 🚦 **Photocell state** *(experimental)* - per-photocell `binary_sensor` for beam blocked/clear
+- 🔍 **Packet capture logger** - `debug_unknown_packets` logs/classifies bus traffic to map new events
 
 ## Supported Hardware
 
@@ -335,6 +338,94 @@ text:
 This creates a text input in Home Assistant where you can paste hex commands. The command is sent immediately when you submit the text.
 
 > **Note**: The text component approach is recommended because ESPHome's API service string variables have [known issues](https://github.com/esphome/issues/issues/3564) with the ESP-IDF framework.
+
+## BlueBus events
+
+In addition to gate control, the component can surface events that the Nice controller
+forwards onto the Bus-T4 wire from its BlueBus accessories (photocells and wired keypads).
+These are **additive** — they don't affect the `cover` or any existing entity.
+
+> **What this can and cannot see.** The ESP32 is a passive consumer of Bus-T4 traffic. It
+> never touches the BlueBus 2‑wire bus directly (a second master there would break the gate).
+> It only parses what the controller already broadcasts / answers on Bus-T4. As a result the
+> **source** of a command (which keypad, which remote) is *not* available — the protocol does
+> not carry it — and some BlueBus details are controller-specific (see the photocell caveat).
+
+### Keypad / command events (`event`)
+
+Fires an [event entity](https://www.home-assistant.io/integrations/event/) every time the
+control unit reports an executed command on the bus:
+
+```yaml
+event:
+  - platform: bus_t4
+    name: "Gate keypad"
+    device_class: button   # optional
+```
+
+Event types emitted: `open`, `close`, `step_by_step`, `partial_1`, `partial_2`,
+`partial_3`, `stop`.
+
+Caveats:
+- The payload is **which command** was issued, not **who** issued it. A wired keypad, an OXI
+  remote, a hardwired input and a command sent from Home Assistant all look identical.
+- For the same reason it may also fire for commands the ESP itself sends (e.g. opening the
+  cover from HA). If that turns out to be noisy on your controller, capture it (below) and
+  open an issue — echo suppression can be added once confirmed.
+
+### Photocells (`binary_sensor`) — EXPERIMENTAL
+
+Exposes a BlueBus photocell beam as a binary sensor (ON = beam blocked / obstacle):
+
+```yaml
+binary_sensor:
+  - platform: bus_t4
+    address: 1            # photocell index: 1 = PHOTO, 2 = PHOTO2, 3 = PHOTO3
+    name: "Photocell gate"
+    device_class: safety  # optional
+```
+
+> ⚠️ **Experimental.** Photocell state is read from the controller's "BlueBus diagnostics"
+> response (`0xD0`), which the component polls. That payload's byte layout is **undocumented
+> and differs between controller models**, so the decode is a best guess. The raw payload is
+> logged at `DEBUG` so it can be verified against your hardware. Treat the state as unverified
+> until you've confirmed it with a capture (see below). Everything else (the polling, entity,
+> address selection) works; only the one decode constant needs your bytes to be pinned down.
+
+### Bus device list (`text_sensor`, diagnostic)
+
+A comma-separated list of the Bus-T4 endpoints seen on the bus (e.g.
+`0x00.03 controller, 0x0A.6D radio`). Handy to confirm the component is actually talking to
+your controller and receiver:
+
+```yaml
+text_sensor:
+  - platform: bus_t4
+    name: "Bus devices"
+```
+
+(This lists Bus-T4 endpoints. Individual BlueBus accessories live behind the controller and
+are only enumerable via the `0xD0` diagnostics, which isn't fully mapped yet.)
+
+### Capturing packets (help map the rest)
+
+The photocell layout and a few other details aren't documented for every controller. You can
+help map them with the built-in logger:
+
+1. Flash [`debug_yaml`](debug_yaml) (or add `debug_unknown_packets: true` under `bus_t4:`).
+2. `esphome logs debug_yaml` — the UART carries the bus, so logs arrive over WiFi.
+3. Do **one** thing at a time and note the time: block/clear a photocell beam; press each
+   keypad button.
+4. Each received packet is logged as `[pkt] <type guess> ... <hex>`. Copy the lines around
+   each action, say what you physically did, and share them (e.g. a GitHub issue).
+
+The byte layouts and confidence levels are tracked in
+[`.agent/PROTOCOL.md`](.agent/PROTOCOL.md).
+
+### Robus note
+
+On Robus controllers the cover already disables position queries during movement. The BlueBus
+event features above don't change that and add only lightweight, read-only polling.
 
 ## How Position Tracking Works
 

@@ -46,11 +46,23 @@ class BusT4Component final : public Component, public uart::UARTDevice {
 
   T4Source get_address() const { return address_; }
 
+  // Address of the motor controller, shared across devices. Defaults to the common Nice
+  // endpoint {0x00, 0x03}; the cover updates it once discovery (INF_WHO) finds the unit,
+  // so other devices (e.g. photocell polling) don't each have to re-run discovery.
+  void set_controller_address(T4Source addr) { controller_address_ = addr; }
+  T4Source get_controller_address() const { return controller_address_; }
+
   // Register a device to receive packet callbacks
   void register_device(BusT4Device *device) { devices_.push_back(device); }
 
+  // When enabled, every received packet is logged with a classification guess so that
+  // unmapped BlueBus events (photocells, keypads) can be captured. See .agent/PROTOCOL.md.
+  void set_debug_unknown_packets(bool enable) { debug_unknown_packets_ = enable; }
+
  private:
   void rxTask();
+  // Log a received packet with a human-readable type guess (debug_unknown_packets).
+  void log_packet_classification(const T4Packet &packet);
   void txTask();
   static void rxTaskThunk(void *self) { static_cast<BusT4Component *>(self)->rxTask(); }
   static void txTaskThunk(void *self) { static_cast<BusT4Component *>(self)->txTask(); }
@@ -60,6 +72,7 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   void send_break();
 
   T4Source address_;
+  T4Source controller_address_{0x00, 0x03};
 
   TaskHandle_t rxTask_ = nullptr;
   TaskHandle_t txTask_ = nullptr;
@@ -70,6 +83,8 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   EventGroupHandle_t requestEvent_ = nullptr;
 
   std::vector<BusT4Device *> devices_;
+
+  bool debug_unknown_packets_ = false;
 
   // Cached UART port for direct baud rate register writes during break signal.
   uart_port_t uart_num_ = UART_NUM_MAX;
