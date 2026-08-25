@@ -58,6 +58,13 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   void set_position_report_interval(uint32_t interval) { position_report_interval_ = interval; }
   void set_force_estimated_position(bool enable) { force_estimated_position_ = enable; }
 
+  // Pin the control unit address and skip discovery
+  void set_controller_address(uint16_t address) {
+    target_address_.address = static_cast<uint8_t>(address >> 8);
+    target_address_.endpoint = static_cast<uint8_t>(address & 0xFF);
+    address_pinned_ = true;
+  }
+
   // Re-run bus discovery and device identification
   void rediscover();
 
@@ -108,6 +115,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   uint8_t init_step_{0};  // Initialization state machine step
   uint8_t discovery_attempts_{0};  // Discovery retry counter for exponential backoff
   bool controller_found_{false};   // Control unit latched - ignore later responders
+  bool address_pinned_{false};     // Control unit address came from YAML
   uint32_t get_discovery_interval() const;  // Get current discovery retry interval
 
   // Device identification - for device-specific handling

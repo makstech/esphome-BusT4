@@ -27,6 +27,13 @@ void BusT4Cover::setup() {
 
   // Load learned durations from flash
   load_learned_durations();
+
+  if (address_pinned_) {
+    ESP_LOGI(TAG, "Control unit pinned to 0x%02X.%02X, skipping discovery",
+             target_address_.address, target_address_.endpoint);
+    controller_found_ = true;
+    init_step_ = 1;
+  }
 }
 
 void BusT4Cover::loop() {
@@ -124,9 +131,11 @@ void BusT4Cover::loop() {
 void BusT4Cover::dump_config() {
   LOG_COVER("", "Bus T4 Cover", this);
   ESP_LOGCONFIG(TAG, "  Initialized: %s", init_ok_ ? "Yes" : "No");
+  const char *address_note = address_pinned_      ? " (pinned)"
+                             : controller_found_  ? ""
+                                                  : " (default - not discovered)";
   ESP_LOGCONFIG(TAG, "  Controller address: 0x%02X.%02X%s",
-                target_address_.address, target_address_.endpoint,
-                controller_found_ ? "" : " (default - not discovered)");
+                target_address_.address, target_address_.endpoint, address_note);
   ESP_LOGCONFIG(TAG, "  Auto-learn timing: %s", auto_learn_timing_ ? "Yes" : "No");
   ESP_LOGCONFIG(TAG, "  Open duration: %.1fs", open_duration_ / 1000.0f);
   ESP_LOGCONFIG(TAG, "  Close duration: %.1fs", close_duration_ / 1000.0f);
@@ -1215,8 +1224,6 @@ void BusT4Cover::rediscover() {
 
   ESP_LOGI(TAG, "Restarting bus discovery");
   // Clear everything discovery derives so stale state cannot mask a failed round
-  target_address_ = T4Source{0x00, 0x03};
-  controller_found_ = false;
   has_oxi_ = false;
   oxi_address_ = T4Source{0x00, 0x00};
   oxi_product_.clear();
@@ -1231,9 +1238,16 @@ void BusT4Cover::rediscover() {
   encoder_max_ = 0;
   pos_max_from_cu_ = false;
   discovery_attempts_ = 0;
-  init_step_ = 0;
   init_ok_ = false;
   last_init_attempt_ = 0;
+
+  if (address_pinned_) {
+    init_step_ = 1;
+  } else {
+    target_address_ = T4Source{0x00, 0x03};
+    controller_found_ = false;
+    init_step_ = 0;
+  }
 }
 
 uint32_t BusT4Cover::get_discovery_interval() const {

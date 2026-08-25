@@ -196,6 +196,8 @@ button:
 | `open_duration` | time | `20s` | Initial/fallback time to fully open |
 | `close_duration` | time | `20s` | Initial/fallback time to fully close |
 | `position_report_interval` | time | `1s` | How often to update position during movement |
+| `force_estimated_position` | boolean | `false` | Ignore the controller's encoder and estimate position from timing |
+| `controller_address` | hex | *discovered* | Pin the control unit address and skip bus discovery |
 
 ### Available Commands
 
