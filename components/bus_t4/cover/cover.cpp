@@ -1177,9 +1177,8 @@ bool BusT4Cover::read_position_value(const T4Packet &packet, uint16_t *out) cons
   // units where the leading byte selects the encoder
   const uint8_t DATA_OFFSET = 12;
   const uint8_t len = t4_dmp_payload_len(packet);
-  if (len < 1 || packet.size < DATA_OFFSET + len) {
-    ESP_LOGW(TAG, "Position reply too short for cmd=0x%02X (size=%d, payload=%d)",
-             packet.message.command, packet.size, len);
+  if (len < 1) {
+    ESP_LOGW(TAG, "Position reply for cmd=0x%02X carries no payload", packet.message.command);
     return false;
   }
 

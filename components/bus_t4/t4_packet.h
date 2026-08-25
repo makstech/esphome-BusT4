@@ -204,9 +204,13 @@ struct T4Packet {
   }
 };
 
-// messageSize also covers device, command, flags, sequence, status and the checksum
+// messageSize also covers device, command, flags, sequence, status and the checksum, and is not
+// cross-checked against the frame length, so clamp it to the bytes actually received
 inline uint8_t t4_dmp_payload_len(const T4Packet& packet) {
-  return packet.header.messageSize < 6 ? 0 : packet.header.messageSize - 6;
+  if (packet.header.messageSize < 6 || packet.size < 13) return 0;
+  const uint8_t declared = packet.header.messageSize - 6;
+  const uint8_t available = packet.size - 13;
+  return declared < available ? declared : available;
 }
 
 // DEP command packet structure
