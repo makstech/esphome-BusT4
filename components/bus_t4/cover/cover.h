@@ -53,6 +53,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   void set_close_duration(uint32_t duration) { close_duration_ = duration; }
   void set_auto_learn_timing(bool enable) { auto_learn_timing_ = enable; }
   void set_position_report_interval(uint32_t interval) { position_report_interval_ = interval; }
+  void set_force_estimated_position(bool enable) { force_estimated_position_ = enable; }
 
   // Motor controller configuration (runtime)
   // These send commands to the motor controller to change its settings
@@ -147,6 +148,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   uint32_t last_status_refresh_{0};  // Periodic status refresh
 
   // Position source tracking
+  bool force_estimated_position_{false};  // Ignore encoder reports, always estimate from timing
   bool has_encoder_{false};          // True if device reports encoder positions
   uint32_t last_encoder_update_{0};  // Last time we got encoder data
 

@@ -163,7 +163,9 @@ void BusT4Cover::dump_config() {
     }
 
     // Position tracking mode
-    if (has_encoder_) {
+    if (force_estimated_position_) {
+      ESP_LOGCONFIG(TAG, "  Position source: Time-based estimation (encoder ignored)");
+    } else if (has_encoder_) {
       ESP_LOGCONFIG(TAG, "  Position source: Encoder (primary)");
     } else {
       ESP_LOGCONFIG(TAG, "  Position source: Time-based estimation");
@@ -895,7 +897,7 @@ void BusT4Cover::init_oxi_device() {
 }
 
 void BusT4Cover::request_position() {
-  if (parent_ == nullptr) return;
+  if (parent_ == nullptr || force_estimated_position_) return;
   send_info_request(FOR_CU, INF_CUR_POS);
 }
 
@@ -915,6 +917,12 @@ void BusT4Cover::request_status_confirmation() {
 
 void BusT4Cover::update_position(uint16_t encoder_pos) {
   pos_current_ = encoder_pos;
+
+  if (force_estimated_position_) {
+    // Keep the raw value for diagnostics without letting it drive the cover
+    ESP_LOGV(TAG, "Ignoring encoder position %d (force_estimated_position)", encoder_pos);
+    return;
+  }
 
   // Mark that we have encoder support and update timestamp
   has_encoder_ = true;
