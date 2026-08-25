@@ -137,7 +137,11 @@ void BusT4Cover::dump_config() {
       case MOTOR_UPANDOVER: type_str = "Up-and-over"; break;
     }
     ESP_LOGCONFIG(TAG, "  Motor type: %s", type_str);
-    ESP_LOGCONFIG(TAG, "  Position range: %d - %d", pos_min_, pos_max_);
+    ESP_LOGCONFIG(TAG, "  Position range: %d - %d%s", pos_min_, pos_max_,
+                  pos_max_from_cu_ ? "" : " (open position not reported)");
+    if (encoder_max_ > 0) {
+      ESP_LOGCONFIG(TAG, "  Encoder max: %d", encoder_max_);
+    }
 
     // Device identification
     if (!manufacturer_.empty()) {
@@ -572,35 +576,40 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     }
 
     case INF_POS_MAX: {
-      // Open position (2 bytes, big endian)
-      uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+      // Programmed open position - the reference for 100%
+      uint16_t pos;
+      if (!read_position_value(packet, &pos)) break;
       if (pos > 0) {
         pos_max_ = pos;
+        pos_max_from_cu_ = true;
         ESP_LOGI(TAG, "Open position: %d", pos_max_);
       }
       break;
     }
 
     case INF_POS_MIN: {
-      // Close position (2 bytes, big endian)
-      uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+      // Programmed close position - the reference for 0%
+      uint16_t pos;
+      if (!read_position_value(packet, &pos)) break;
+      if (pos_max_ > 0 && pos >= pos_max_) {
+        // An inverted range freezes every later position update
+        ESP_LOGW(TAG, "Ignoring close position %d - not below open position %d", pos, pos_max_);
+        break;
+      }
       pos_min_ = pos;
       ESP_LOGI(TAG, "Close position: %d", pos_min_);
       break;
     }
 
     case INF_MAX_OPN: {
-      // Maximum encoder position
-      // Walky uses 1-byte, others use 2 bytes big-endian
+      // Physical encoder limit, which sits past the programmed open point
       uint16_t pos;
-      if (is_walky_) {
-        pos = packet.data[DATA_OFFSET];
-      } else {
-        pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
-      }
-      ESP_LOGI(TAG, "Max encoder position: %d", pos);
-      if (pos > 0) {
+      if (!read_position_value(packet, &pos)) break;
+      encoder_max_ = pos;
+      ESP_LOGI(TAG, "Max encoder position: %d", encoder_max_);
+      if (!pos_max_from_cu_ && pos > 0) {
         pos_max_ = pos;
+        ESP_LOGD(TAG, "Using encoder max as open position (INF_POS_MAX unavailable)");
       }
       break;
     }

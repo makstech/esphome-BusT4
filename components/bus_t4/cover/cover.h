@@ -113,9 +113,11 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   std::string oxi_firmware_;           // OXI firmware version
 
   // Position tracking
-  uint16_t pos_max_{2048};    // Encoder position for fully open
-  uint16_t pos_min_{0};       // Encoder position for fully closed
-  uint16_t pos_current_{0};   // Current encoder position
+  uint16_t pos_max_{2048};       // Encoder position for fully open
+  uint16_t pos_min_{0};          // Encoder position for fully closed
+  uint16_t pos_current_{0};      // Current encoder position
+  uint16_t encoder_max_{0};      // Physical encoder limit (INF_MAX_OPN), not the open point
+  bool pos_max_from_cu_{false};  // pos_max_ came from INF_POS_MAX rather than a fallback
 
   // Motor type
   T4MotorType motor_type_{MOTOR_SLIDING};
