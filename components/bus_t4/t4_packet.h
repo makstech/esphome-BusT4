@@ -31,6 +31,11 @@ struct T4Source {
   bool operator!=(const T4Source& other) const { return !(*this == other); }
 };
 
+// Either address byte set to 0xFF marks a broadcast
+inline bool t4_addressed_to(const T4Source& to, const T4Source& self) {
+  return to == self || to.address == 0xFF || to.endpoint == 0xFF;
+}
+
 // Message type (byte 6 of packet)
 enum T4Protocol : uint8_t {
   DEP = 0x01,  // Direct Execute Protocol - command execution

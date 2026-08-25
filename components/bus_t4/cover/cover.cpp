@@ -1207,6 +1207,35 @@ void BusT4Cover::accept_controller(T4Source addr, const char *via) {
   }
 }
 
+void BusT4Cover::rediscover() {
+  if (current_operation != cover::COVER_OPERATION_IDLE) {
+    ESP_LOGW(TAG, "Not restarting discovery while the gate is moving");
+    return;
+  }
+
+  ESP_LOGI(TAG, "Restarting bus discovery");
+  // Clear everything discovery derives so stale state cannot mask a failed round
+  target_address_ = T4Source{0x00, 0x03};
+  controller_found_ = false;
+  has_oxi_ = false;
+  oxi_address_ = T4Source{0x00, 0x00};
+  oxi_product_.clear();
+  oxi_firmware_.clear();
+  product_name_.clear();
+  manufacturer_.clear();
+  firmware_version_.clear();
+  is_walky_ = false;
+  is_robus_ = false;
+  pos_max_ = 2048;
+  pos_min_ = 0;
+  encoder_max_ = 0;
+  pos_max_from_cu_ = false;
+  discovery_attempts_ = 0;
+  init_step_ = 0;
+  init_ok_ = false;
+  last_init_attempt_ = 0;
+}
+
 uint32_t BusT4Cover::get_discovery_interval() const {
   // Exponential backoff: 1s, 2s, 4s, 8s, then cap at 10s
   // This avoids flooding the bus while still retrying periodically

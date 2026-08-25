@@ -58,6 +58,9 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   void set_position_report_interval(uint32_t interval) { position_report_interval_ = interval; }
   void set_force_estimated_position(bool enable) { force_estimated_position_ = enable; }
 
+  // Re-run bus discovery and device identification
+  void rediscover();
+
   // Motor controller configuration (runtime)
   // These send commands to the motor controller to change its settings
   void set_auto_close(bool enable);      // L1 - Auto-close after opening
