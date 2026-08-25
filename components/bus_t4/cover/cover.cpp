@@ -595,7 +595,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     case INF_POS_MAX: {
       // Programmed open position - the reference for 100%
       uint16_t pos;
-      if (!read_position_value(packet, &pos)) break;
+      if (!read_position_value(packet, &pos, false)) break;
       if (pos > 0) {
         pos_max_ = pos;
         pos_max_from_cu_ = true;
@@ -607,8 +607,9 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     case INF_POS_MIN: {
       // Programmed close position - the reference for 0%
       uint16_t pos;
-      if (!read_position_value(packet, &pos)) break;
-      if (pos_max_ > 0 && pos >= pos_max_) {
+      if (!read_position_value(packet, &pos, false)) break;
+      // Only meaningful once an open position is known
+      if ((pos_max_from_cu_ || encoder_max_ > 0) && pos >= pos_max_) {
         // An inverted range freezes every later position update
         ESP_LOGW(TAG, "Ignoring close position %d - not below open position %d", pos, pos_max_);
         break;
@@ -1172,7 +1173,8 @@ void BusT4Cover::send_raw_cmd(const std::string &data) {
   parent_->write_raw(bytes.data(), bytes.size());
 }
 
-bool BusT4Cover::read_position_value(const T4Packet &packet, uint16_t *out) const {
+bool BusT4Cover::read_position_value(const T4Packet &packet, uint16_t *out,
+                                     bool walky_one_byte) const {
   // Width varies by controller: 1 byte on Walky, 2 on a single encoder, 3 on dual-encoder
   // units where the leading byte selects the encoder
   const uint8_t DATA_OFFSET = 12;
@@ -1182,7 +1184,7 @@ bool BusT4Cover::read_position_value(const T4Packet &packet, uint16_t *out) cons
     return false;
   }
 
-  if (is_walky_ || len == 1) {
+  if ((walky_one_byte && is_walky_) || len == 1) {
     *out = packet.data[DATA_OFFSET];
     return true;
   }

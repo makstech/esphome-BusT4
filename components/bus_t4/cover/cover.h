@@ -100,7 +100,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   void update_position(uint16_t encoder_pos);
 
   // Decode a position payload, whose width varies by controller
-  bool read_position_value(const T4Packet &packet, uint16_t *out) const;
+  bool read_position_value(const T4Packet &packet, uint16_t *out, bool walky_one_byte = true) const;
 
   // Latch the control unit address found by discovery
   void accept_controller(T4Source addr, const char *via);
