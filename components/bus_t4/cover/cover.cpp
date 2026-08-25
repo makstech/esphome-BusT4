@@ -133,7 +133,7 @@ void BusT4Cover::dump_config() {
   ESP_LOGCONFIG(TAG, "  Initialized: %s", init_ok_ ? "Yes" : "No");
   const char *address_note = address_pinned_      ? " (pinned)"
                              : controller_found_  ? ""
-                                                  : " (default - not discovered)";
+                                                  : " (not discovered yet)";
   ESP_LOGCONFIG(TAG, "  Controller address: 0x%02X.%02X%s",
                 target_address_.address, target_address_.endpoint, address_note);
   ESP_LOGCONFIG(TAG, "  Auto-learn timing: %s", auto_learn_timing_ ? "Yes" : "No");
@@ -468,13 +468,24 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
 
   // Check for errors
   if (status != ERR_NONE) {
-    ESP_LOGW(TAG, "DMP error: 0x%02X", status);
+    // Loud while identifying the controller, quiet afterwards - a rejected poll repeats forever
+    if (init_ok_) {
+      ESP_LOGD(TAG, "DMP error 0x%02X for cmd=0x%02X", status, command);
+    } else {
+      ESP_LOGW(TAG, "DMP error 0x%02X for cmd=0x%02X", status, command);
+    }
     return;
   }
 
   // Only process GET responses (0x19 = complete, 0x18 = incomplete)
   if (flags != RSP_GET_COMPLETE && flags != RSP_GET_INCOMPLETE) {
     ESP_LOGV(TAG, "Ignoring non-GET response: flags=0x%02X", flags);
+    return;
+  }
+
+  // Every handler below reads at least one payload byte
+  if (payload_len == 0) {
+    ESP_LOGV(TAG, "Empty DMP payload for cmd=0x%02X", command);
     return;
   }
 
@@ -488,12 +499,6 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     T4Packet cont_packet(target_address_, parent_->get_address(), DMP, cont_msg, sizeof(cont_msg));
     write(&cont_packet, 0);
     // Still process the partial data we received
-  }
-
-  // Every handler below reads at least one payload byte
-  if (payload_len == 0) {
-    ESP_LOGV(TAG, "Empty DMP payload for cmd=0x%02X", command);
-    return;
   }
 
   switch (command) {
