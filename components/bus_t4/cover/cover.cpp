@@ -124,6 +124,9 @@ void BusT4Cover::loop() {
 void BusT4Cover::dump_config() {
   LOG_COVER("", "Bus T4 Cover", this);
   ESP_LOGCONFIG(TAG, "  Initialized: %s", init_ok_ ? "Yes" : "No");
+  ESP_LOGCONFIG(TAG, "  Controller address: 0x%02X.%02X%s",
+                target_address_.address, target_address_.endpoint,
+                controller_found_ ? "" : " (default - not discovered)");
   ESP_LOGCONFIG(TAG, "  Auto-learn timing: %s", auto_learn_timing_ ? "Yes" : "No");
   ESP_LOGCONFIG(TAG, "  Open duration: %.1fs", open_duration_ / 1000.0f);
   ESP_LOGCONFIG(TAG, "  Close duration: %.1fs", close_duration_ / 1000.0f);
@@ -500,28 +503,31 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       ESP_LOGI(TAG, "INF_WHO response: device_type=0x%02X from 0x%02X.%02X",
                responder_type, packet.header.from.address, packet.header.from.endpoint);
 
-      // Accept controller (0x04), endpoint 0x03, OR radio/OXI (0x0A)
-      // Some units (MC842) respond as OXI even if they're motor controllers
-      if (responder_type == CONTROLLER || packet.header.from.endpoint == 0x03) {
-        // Primary motor controller found
-        ESP_LOGI(TAG, "Found motor controller at 0x%02X.%02X",
-                 packet.header.from.address, packet.header.from.endpoint);
-        target_address_ = packet.header.from;
-        if (init_step_ == 0) {
-          init_step_ = 1;  // Move to next init step
-          discovery_attempts_ = 0;  // Reset backoff on success
+      if (responder_type == RADIO) {
+        // Track the OXI whatever its endpoint, so its identity is not filed as the CU's
+        if (!has_oxi_ || oxi_address_ != packet.header.from) {
+          ESP_LOGI(TAG, "Found OXI/RADIO device at 0x%02X.%02X (not using as target)",
+                   packet.header.from.address, packet.header.from.endpoint);
+          oxi_address_ = packet.header.from;
+          has_oxi_ = true;
+          init_oxi_device();
         }
-      } else if (responder_type == RADIO) {
-        // OXI receiver - track for info but don't use as motor controller target
-        // This matches original behavior: OXI is only for receiving remote control info
-        ESP_LOGI(TAG, "Found OXI/RADIO device at 0x%02X.%02X (not using as target)",
-                 packet.header.from.address, packet.header.from.endpoint);
-        oxi_address_ = packet.header.from;
-        has_oxi_ = true;
+        break;
+      }
 
-        // Queue OXI device info queries (async, won't block init)
-        init_oxi_device();
-        // Don't advance init_step_ - keep waiting for CONTROLLER (0x04)
+      if (responder_type == CONTROLLER) {
+        accept_controller(packet.header.from, "device type 0x04");
+        break;
+      }
+
+      // Trust the conventional endpoint only once a type match has had time to arrive
+      if (!controller_found_ && discovery_attempts_ >= DISCOVERY_TYPE_ATTEMPTS &&
+          packet.header.from.endpoint == 0x03) {
+        ESP_LOGW(TAG, "No control unit answered 0x04 in %d attempts; accepting 0x%02X.%02X "
+                      "which answered 0x%02X. Please report this with your controller model.",
+                 discovery_attempts_, packet.header.from.address,
+                 packet.header.from.endpoint, responder_type);
+        accept_controller(packet.header.from, "endpoint 0x03 fallback");
       }
       break;
     }
@@ -802,7 +808,8 @@ void BusT4Cover::init_device() {
   switch (init_step_) {
     case 0: {
       // Step 0: Discover devices on the bus
-      discovery_attempts_++;
+      // Saturate rather than wrap, which would drop the backoff back to 1s
+      if (discovery_attempts_ < 255) discovery_attempts_++;
       ESP_LOGI(TAG, "Initializing device - discovering... (attempt %d)", discovery_attempts_);
       T4Source broadcast{0xFF, 0xFF};
       uint8_t who_msg[5] = { FOR_ALL, INF_WHO, REQ_GET, 0x00, 0x00 };
@@ -1179,6 +1186,25 @@ bool BusT4Cover::read_position_value(const T4Packet &packet, uint16_t *out) cons
   // 2 bytes, and wider payloads read from the front
   *out = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
   return true;
+}
+
+void BusT4Cover::accept_controller(T4Source addr, const char *via) {
+  if (controller_found_) {
+    if (target_address_ != addr) {
+      ESP_LOGW(TAG, "Ignoring second control unit at 0x%02X.%02X, already using 0x%02X.%02X",
+               addr.address, addr.endpoint, target_address_.address, target_address_.endpoint);
+    }
+    return;
+  }
+
+  ESP_LOGI(TAG, "Found motor controller at 0x%02X.%02X (via %s)",
+           addr.address, addr.endpoint, via);
+  target_address_ = addr;
+  controller_found_ = true;
+  if (init_step_ == 0) {
+    init_step_ = 1;           // Move to next init step
+    discovery_attempts_ = 0;  // Reset backoff on success
+  }
 }
 
 uint32_t BusT4Cover::get_discovery_interval() const {

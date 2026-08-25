@@ -22,6 +22,9 @@ static constexpr uint32_t MAX_LEARNED_DURATION = 300000;  // 5 minutes
 // Deviation threshold for updating learned values (10%)
 static constexpr float LEARNING_DEVIATION_THRESHOLD = 0.10f;
 
+// Discovery rounds to wait for a device type 0x04 answer before trusting the address
+static constexpr uint8_t DISCOVERY_TYPE_ATTEMPTS = 3;
+
 // Structure for persisting learned durations
 struct LearnedDurations {
   uint32_t open_duration;
@@ -89,6 +92,9 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   // Decode a position payload, whose width varies by controller
   bool read_position_value(const T4Packet &packet, uint16_t *out) const;
 
+  // Latch the control unit address found by discovery
+  void accept_controller(T4Source addr, const char *via);
+
   // Publish state only if changed
   void publish_state_if_changed();
 
@@ -98,6 +104,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   bool init_ok_{false};
   uint8_t init_step_{0};  // Initialization state machine step
   uint8_t discovery_attempts_{0};  // Discovery retry counter for exponential backoff
+  bool controller_found_{false};   // Control unit latched - ignore later responders
   uint32_t get_discovery_interval() const;  // Get current discovery retry interval
 
   // Device identification - for device-specific handling
