@@ -199,6 +199,11 @@ struct T4Packet {
   }
 };
 
+// messageSize also covers device, command, flags, sequence, status and the checksum
+inline uint8_t t4_dmp_payload_len(const T4Packet& packet) {
+  return packet.header.messageSize < 6 ? 0 : packet.header.messageSize - 6;
+}
+
 // DEP command packet structure
 enum T4CommandPacket : uint8_t {
   RUN = 0x82,  // Execute command

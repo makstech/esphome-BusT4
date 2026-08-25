@@ -427,7 +427,12 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
   // DMP packets contain info responses
   // Structure: [device] [command] [flags] [sequence] [status] [data...]
 
-  if (packet.size < 14) return;
+  // A 13-byte reply carries no payload, which is how ERR_UNSUPPORTED arrives
+  if (packet.size < 13) return;
+
+  // DMP payload data starts at data[12] (after header + message header)
+  const uint8_t DATA_OFFSET = 12;
+  const uint8_t payload_len = t4_dmp_payload_len(packet);
 
   uint8_t device = packet.message.device;
   uint8_t command = packet.message.command;
@@ -438,10 +443,10 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
   ESP_LOGD(TAG, "DMP packet: dev=0x%02X, cmd=0x%02X, flags=0x%02X, seq=%d, status=0x%02X",
            device, command, flags, sequence, status);
 
-  // Log raw data for debugging
-  ESP_LOGV(TAG, "DMP raw data: %02X %02X %02X %02X %02X %02X %02X",
-           packet.data[8], packet.data[9], packet.data[10], packet.data[11],
-           packet.data[12], packet.data[13], packet.data[14]);
+  if (payload_len > 0 && packet.size >= DATA_OFFSET + payload_len) {
+    ESP_LOGV(TAG, "DMP payload (%d): %s", payload_len,
+             format_hex_pretty(packet.data + DATA_OFFSET, payload_len).c_str());
+  }
 
   // Check for errors
   if (status != ERR_NONE) {
@@ -467,9 +472,11 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     // Still process the partial data we received
   }
 
-  // Process based on command type
-  // DMP payload data starts at data[12] (after header + message header)
-  const uint8_t DATA_OFFSET = 12;
+  // Every handler below reads at least one payload byte
+  if (payload_len == 0) {
+    ESP_LOGV(TAG, "Empty DMP payload for cmd=0x%02X", command);
+    return;
+  }
 
   switch (command) {
     case INF_TYPE: {
