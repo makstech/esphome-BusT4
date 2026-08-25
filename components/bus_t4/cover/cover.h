@@ -85,6 +85,9 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   // Update position from encoder value
   void update_position(uint16_t encoder_pos);
 
+  // Decode a position payload, whose width varies by controller
+  bool read_position_value(const T4Packet &packet, uint16_t *out) const;
+
   // Publish state only if changed
   void publish_state_if_changed();
 

@@ -564,16 +564,9 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     }
 
     case INF_CUR_POS: {
-      // Current position response
-      // Walky uses 1-byte position, others use 2 bytes big-endian
       uint16_t pos;
-      if (is_walky_) {
-        pos = packet.data[DATA_OFFSET];
-        ESP_LOGD(TAG, "Current position (Walky 1-byte): %d", pos);
-      } else {
-        pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
-        ESP_LOGD(TAG, "Current position: %d", pos);
-      }
+      if (!read_position_value(packet, &pos)) break;
+      ESP_LOGD(TAG, "Current position: %d", pos);
       update_position(pos);
       break;
     }
@@ -1144,6 +1137,31 @@ void BusT4Cover::send_raw_cmd(const std::string &data) {
 
   ESP_LOGI(TAG, "Sending raw command: %s", format_hex_pretty(bytes).c_str());
   parent_->write_raw(bytes.data(), bytes.size());
+}
+
+bool BusT4Cover::read_position_value(const T4Packet &packet, uint16_t *out) const {
+  // Width varies by controller: 1 byte on Walky, 2 on a single encoder, 3 on dual-encoder
+  // units where the leading byte selects the encoder
+  const uint8_t DATA_OFFSET = 12;
+  const uint8_t len = t4_dmp_payload_len(packet);
+  if (len < 1 || packet.size < DATA_OFFSET + len) {
+    ESP_LOGW(TAG, "Position reply too short for cmd=0x%02X (size=%d, payload=%d)",
+             packet.message.command, packet.size, len);
+    return false;
+  }
+
+  if (is_walky_ || len == 1) {
+    *out = packet.data[DATA_OFFSET];
+    return true;
+  }
+  if (len == 3) {
+    ESP_LOGV(TAG, "Encoder selector 0x%02X", packet.data[DATA_OFFSET]);
+    *out = (packet.data[DATA_OFFSET + 1] << 8) | packet.data[DATA_OFFSET + 2];
+    return true;
+  }
+  // 2 bytes, and wider payloads read from the front
+  *out = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+  return true;
 }
 
 uint32_t BusT4Cover::get_discovery_interval() const {
