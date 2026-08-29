@@ -1,0 +1,24 @@
+name: Pull Request Labels
+
+on:
+  pull_request:
+    types: [opened, labeled, unlabeled, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: mheap/github-action-required-labels@v5.6.0
+        with:
+          mode: exactly
+          count: 1
+          labels: |
+            semver:patch
+            semver:minor
+            semver:major

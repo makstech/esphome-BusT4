@@ -2,10 +2,7 @@ name: Release Drafter
 
 on:
   push:
-    branches:
-      - main
-  pull_request_target:
-    types: [opened, reopened, synchronize]
+    branches: [main]
 
 permissions:
   contents: read
@@ -14,10 +11,10 @@ jobs:
   update_release_draft:
     permissions:
       contents: write
-      pull-requests: write
+      pull-requests: read
     runs-on: ubuntu-latest
     steps:
-      - uses: release-drafter/release-drafter@v7
+      - uses: release-drafter/release-drafter@v7.7.0
         with:
           config-name: release-drafter.yml
         env:
