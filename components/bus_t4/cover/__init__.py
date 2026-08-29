@@ -12,6 +12,8 @@ CONF_OPEN_DURATION = 'open_duration'
 CONF_CLOSE_DURATION = 'close_duration'
 CONF_AUTO_LEARN_TIMING = 'auto_learn_timing'
 CONF_POSITION_REPORT_INTERVAL = 'position_report_interval'
+CONF_FORCE_ESTIMATED_POSITION = 'force_estimated_position'
+CONF_CONTROLLER_ADDRESS = 'controller_address'
 
 CONFIG_SCHEMA = (
     cover.cover_schema(BusT4Cover, device_class="gate")
@@ -23,6 +25,8 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_CLOSE_DURATION, default='20s'): cv.positive_time_period_milliseconds,
             cv.Optional(CONF_AUTO_LEARN_TIMING, default=True): cv.boolean,
             cv.Optional(CONF_POSITION_REPORT_INTERVAL, default='1s'): cv.positive_time_period_milliseconds,
+            cv.Optional(CONF_FORCE_ESTIMATED_POSITION, default=False): cv.boolean,
+            cv.Optional(CONF_CONTROLLER_ADDRESS): cv.hex_uint16_t,
         }
     )
 )
@@ -38,3 +42,7 @@ async def to_code(config):
     cg.add(var.set_close_duration(config[CONF_CLOSE_DURATION]))
     cg.add(var.set_auto_learn_timing(config[CONF_AUTO_LEARN_TIMING]))
     cg.add(var.set_position_report_interval(config[CONF_POSITION_REPORT_INTERVAL]))
+    cg.add(var.set_force_estimated_position(config[CONF_FORCE_ESTIMATED_POSITION]))
+
+    if CONF_CONTROLLER_ADDRESS in config:
+        cg.add(var.set_controller_address(config[CONF_CONTROLLER_ADDRESS]))

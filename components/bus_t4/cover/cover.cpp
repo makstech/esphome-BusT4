@@ -27,6 +27,13 @@ void BusT4Cover::setup() {
 
   // Load learned durations from flash
   load_learned_durations();
+
+  if (address_pinned_) {
+    ESP_LOGI(TAG, "Control unit pinned to 0x%02X.%02X, skipping discovery",
+             target_address_.address, target_address_.endpoint);
+    controller_found_ = true;
+    init_step_ = 1;
+  }
 }
 
 void BusT4Cover::loop() {
@@ -124,6 +131,11 @@ void BusT4Cover::loop() {
 void BusT4Cover::dump_config() {
   LOG_COVER("", "Bus T4 Cover", this);
   ESP_LOGCONFIG(TAG, "  Initialized: %s", init_ok_ ? "Yes" : "No");
+  const char *address_note = address_pinned_      ? " (pinned)"
+                             : controller_found_  ? ""
+                                                  : " (not discovered yet)";
+  ESP_LOGCONFIG(TAG, "  Controller address: 0x%02X.%02X%s",
+                target_address_.address, target_address_.endpoint, address_note);
   ESP_LOGCONFIG(TAG, "  Auto-learn timing: %s", auto_learn_timing_ ? "Yes" : "No");
   ESP_LOGCONFIG(TAG, "  Open duration: %.1fs", open_duration_ / 1000.0f);
   ESP_LOGCONFIG(TAG, "  Close duration: %.1fs", close_duration_ / 1000.0f);
@@ -137,7 +149,11 @@ void BusT4Cover::dump_config() {
       case MOTOR_UPANDOVER: type_str = "Up-and-over"; break;
     }
     ESP_LOGCONFIG(TAG, "  Motor type: %s", type_str);
-    ESP_LOGCONFIG(TAG, "  Position range: %d - %d", pos_min_, pos_max_);
+    ESP_LOGCONFIG(TAG, "  Position range: %d - %d%s", pos_min_, pos_max_,
+                  pos_max_from_cu_ ? "" : " (open position not reported)");
+    if (encoder_max_ > 0) {
+      ESP_LOGCONFIG(TAG, "  Encoder max: %d", encoder_max_);
+    }
 
     // Device identification
     if (!manufacturer_.empty()) {
@@ -159,7 +175,9 @@ void BusT4Cover::dump_config() {
     }
 
     // Position tracking mode
-    if (has_encoder_) {
+    if (force_estimated_position_) {
+      ESP_LOGCONFIG(TAG, "  Position source: Time-based estimation (encoder ignored)");
+    } else if (has_encoder_) {
       ESP_LOGCONFIG(TAG, "  Position source: Encoder (primary)");
     } else {
       ESP_LOGCONFIG(TAG, "  Position source: Time-based estimation");
@@ -427,7 +445,12 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
   // DMP packets contain info responses
   // Structure: [device] [command] [flags] [sequence] [status] [data...]
 
-  if (packet.size < 14) return;
+  // A 13-byte reply carries no payload, which is how ERR_UNSUPPORTED arrives
+  if (packet.size < 13) return;
+
+  // DMP payload data starts at data[12] (after header + message header)
+  const uint8_t DATA_OFFSET = 12;
+  const uint8_t payload_len = t4_dmp_payload_len(packet);
 
   uint8_t device = packet.message.device;
   uint8_t command = packet.message.command;
@@ -438,20 +461,31 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
   ESP_LOGD(TAG, "DMP packet: dev=0x%02X, cmd=0x%02X, flags=0x%02X, seq=%d, status=0x%02X",
            device, command, flags, sequence, status);
 
-  // Log raw data for debugging
-  ESP_LOGV(TAG, "DMP raw data: %02X %02X %02X %02X %02X %02X %02X",
-           packet.data[8], packet.data[9], packet.data[10], packet.data[11],
-           packet.data[12], packet.data[13], packet.data[14]);
+  if (payload_len > 0 && packet.size >= DATA_OFFSET + payload_len) {
+    ESP_LOGV(TAG, "DMP payload (%d): %s", payload_len,
+             format_hex_pretty(packet.data + DATA_OFFSET, payload_len).c_str());
+  }
 
   // Check for errors
   if (status != ERR_NONE) {
-    ESP_LOGW(TAG, "DMP error: 0x%02X", status);
+    // Loud while identifying the controller, quiet afterwards - a rejected poll repeats forever
+    if (init_ok_) {
+      ESP_LOGD(TAG, "DMP error 0x%02X for cmd=0x%02X", status, command);
+    } else {
+      ESP_LOGW(TAG, "DMP error 0x%02X for cmd=0x%02X", status, command);
+    }
     return;
   }
 
   // Only process GET responses (0x19 = complete, 0x18 = incomplete)
   if (flags != RSP_GET_COMPLETE && flags != RSP_GET_INCOMPLETE) {
     ESP_LOGV(TAG, "Ignoring non-GET response: flags=0x%02X", flags);
+    return;
+  }
+
+  // Every handler below reads at least one payload byte
+  if (payload_len == 0) {
+    ESP_LOGV(TAG, "Empty DMP payload for cmd=0x%02X", command);
     return;
   }
 
@@ -466,10 +500,6 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     write(&cont_packet, 0);
     // Still process the partial data we received
   }
-
-  // Process based on command type
-  // DMP payload data starts at data[12] (after header + message header)
-  const uint8_t DATA_OFFSET = 12;
 
   switch (command) {
     case INF_TYPE: {
@@ -487,28 +517,31 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       ESP_LOGI(TAG, "INF_WHO response: device_type=0x%02X from 0x%02X.%02X",
                responder_type, packet.header.from.address, packet.header.from.endpoint);
 
-      // Accept controller (0x04), endpoint 0x03, OR radio/OXI (0x0A)
-      // Some units (MC842) respond as OXI even if they're motor controllers
-      if (responder_type == CONTROLLER || packet.header.from.endpoint == 0x03) {
-        // Primary motor controller found
-        ESP_LOGI(TAG, "Found motor controller at 0x%02X.%02X",
-                 packet.header.from.address, packet.header.from.endpoint);
-        target_address_ = packet.header.from;
-        if (init_step_ == 0) {
-          init_step_ = 1;  // Move to next init step
-          discovery_attempts_ = 0;  // Reset backoff on success
+      if (responder_type == RADIO) {
+        // Track the OXI whatever its endpoint, so its identity is not filed as the CU's
+        if (!has_oxi_ || oxi_address_ != packet.header.from) {
+          ESP_LOGI(TAG, "Found OXI/RADIO device at 0x%02X.%02X (not using as target)",
+                   packet.header.from.address, packet.header.from.endpoint);
+          oxi_address_ = packet.header.from;
+          has_oxi_ = true;
+          init_oxi_device();
         }
-      } else if (responder_type == RADIO) {
-        // OXI receiver - track for info but don't use as motor controller target
-        // This matches original behavior: OXI is only for receiving remote control info
-        ESP_LOGI(TAG, "Found OXI/RADIO device at 0x%02X.%02X (not using as target)",
-                 packet.header.from.address, packet.header.from.endpoint);
-        oxi_address_ = packet.header.from;
-        has_oxi_ = true;
+        break;
+      }
 
-        // Queue OXI device info queries (async, won't block init)
-        init_oxi_device();
-        // Don't advance init_step_ - keep waiting for CONTROLLER (0x04)
+      if (responder_type == CONTROLLER) {
+        accept_controller(packet.header.from, "device type 0x04");
+        break;
+      }
+
+      // Trust the conventional endpoint only once a type match has had time to arrive
+      if (!controller_found_ && discovery_attempts_ >= DISCOVERY_TYPE_ATTEMPTS &&
+          packet.header.from.endpoint == 0x03) {
+        ESP_LOGW(TAG, "No control unit answered 0x04 in %d attempts; accepting 0x%02X.%02X "
+                      "which answered 0x%02X. Please report this with your controller model.",
+                 discovery_attempts_, packet.header.from.address,
+                 packet.header.from.endpoint, responder_type);
+        accept_controller(packet.header.from, "endpoint 0x03 fallback");
       }
       break;
     }
@@ -557,50 +590,49 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
     }
 
     case INF_CUR_POS: {
-      // Current position response
-      // Walky uses 1-byte position, others use 2 bytes big-endian
       uint16_t pos;
-      if (is_walky_) {
-        pos = packet.data[DATA_OFFSET];
-        ESP_LOGD(TAG, "Current position (Walky 1-byte): %d", pos);
-      } else {
-        pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
-        ESP_LOGD(TAG, "Current position: %d", pos);
-      }
+      if (!read_position_value(packet, &pos)) break;
+      ESP_LOGD(TAG, "Current position: %d", pos);
       update_position(pos);
       break;
     }
 
     case INF_POS_MAX: {
-      // Open position (2 bytes, big endian)
-      uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+      // Programmed open position - the reference for 100%
+      uint16_t pos;
+      if (!read_position_value(packet, &pos, false)) break;
       if (pos > 0) {
         pos_max_ = pos;
+        pos_max_from_cu_ = true;
         ESP_LOGI(TAG, "Open position: %d", pos_max_);
       }
       break;
     }
 
     case INF_POS_MIN: {
-      // Close position (2 bytes, big endian)
-      uint16_t pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+      // Programmed close position - the reference for 0%
+      uint16_t pos;
+      if (!read_position_value(packet, &pos, false)) break;
+      // Only meaningful once an open position is known
+      if ((pos_max_from_cu_ || encoder_max_ > 0) && pos >= pos_max_) {
+        // An inverted range freezes every later position update
+        ESP_LOGW(TAG, "Ignoring close position %d - not below open position %d", pos, pos_max_);
+        break;
+      }
       pos_min_ = pos;
       ESP_LOGI(TAG, "Close position: %d", pos_min_);
       break;
     }
 
     case INF_MAX_OPN: {
-      // Maximum encoder position
-      // Walky uses 1-byte, others use 2 bytes big-endian
+      // Physical encoder limit, which sits past the programmed open point
       uint16_t pos;
-      if (is_walky_) {
-        pos = packet.data[DATA_OFFSET];
-      } else {
-        pos = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
-      }
-      ESP_LOGI(TAG, "Max encoder position: %d", pos);
-      if (pos > 0) {
+      if (!read_position_value(packet, &pos)) break;
+      encoder_max_ = pos;
+      ESP_LOGI(TAG, "Max encoder position: %d", encoder_max_);
+      if (!pos_max_from_cu_ && pos > 0) {
         pos_max_ = pos;
+        ESP_LOGD(TAG, "Using encoder max as open position (INF_POS_MAX unavailable)");
       }
       break;
     }
@@ -791,7 +823,8 @@ void BusT4Cover::init_device() {
   switch (init_step_) {
     case 0: {
       // Step 0: Discover devices on the bus
-      discovery_attempts_++;
+      // Saturate rather than wrap, which would drop the backoff back to 1s
+      if (discovery_attempts_ < 255) discovery_attempts_++;
       ESP_LOGI(TAG, "Initializing device - discovering... (attempt %d)", discovery_attempts_);
       T4Source broadcast{0xFF, 0xFF};
       uint8_t who_msg[5] = { FOR_ALL, INF_WHO, REQ_GET, 0x00, 0x00 };
@@ -886,7 +919,7 @@ void BusT4Cover::init_oxi_device() {
 }
 
 void BusT4Cover::request_position() {
-  if (parent_ == nullptr) return;
+  if (parent_ == nullptr || force_estimated_position_) return;
   send_info_request(FOR_CU, INF_CUR_POS);
 }
 
@@ -906,6 +939,12 @@ void BusT4Cover::request_status_confirmation() {
 
 void BusT4Cover::update_position(uint16_t encoder_pos) {
   pos_current_ = encoder_pos;
+
+  if (force_estimated_position_) {
+    // Keep the raw value for diagnostics without letting it drive the cover
+    ESP_LOGV(TAG, "Ignoring encoder position %d (force_estimated_position)", encoder_pos);
+    return;
+  }
 
   // Mark that we have encoder support and update timestamp
   has_encoder_ = true;
@@ -1137,6 +1176,84 @@ void BusT4Cover::send_raw_cmd(const std::string &data) {
 
   ESP_LOGI(TAG, "Sending raw command: %s", format_hex_pretty(bytes).c_str());
   parent_->write_raw(bytes.data(), bytes.size());
+}
+
+bool BusT4Cover::read_position_value(const T4Packet &packet, uint16_t *out,
+                                     bool walky_one_byte) const {
+  // Width varies by controller: 1 byte on Walky, 2 on a single encoder, 3 on dual-encoder
+  // units where the leading byte selects the encoder
+  const uint8_t DATA_OFFSET = 12;
+  const uint8_t len = t4_dmp_payload_len(packet);
+  if (len < 1) {
+    ESP_LOGW(TAG, "Position reply for cmd=0x%02X carries no payload", packet.message.command);
+    return false;
+  }
+
+  if ((walky_one_byte && is_walky_) || len == 1) {
+    *out = packet.data[DATA_OFFSET];
+    return true;
+  }
+  if (len == 3) {
+    ESP_LOGV(TAG, "Encoder selector 0x%02X", packet.data[DATA_OFFSET]);
+    *out = (packet.data[DATA_OFFSET + 1] << 8) | packet.data[DATA_OFFSET + 2];
+    return true;
+  }
+  // 2 bytes, and wider payloads read from the front
+  *out = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+  return true;
+}
+
+void BusT4Cover::accept_controller(T4Source addr, const char *via) {
+  if (controller_found_) {
+    if (target_address_ != addr) {
+      ESP_LOGW(TAG, "Ignoring second control unit at 0x%02X.%02X, already using 0x%02X.%02X",
+               addr.address, addr.endpoint, target_address_.address, target_address_.endpoint);
+    }
+    return;
+  }
+
+  ESP_LOGI(TAG, "Found motor controller at 0x%02X.%02X (via %s)",
+           addr.address, addr.endpoint, via);
+  target_address_ = addr;
+  controller_found_ = true;
+  if (init_step_ == 0) {
+    init_step_ = 1;           // Move to next init step
+    discovery_attempts_ = 0;  // Reset backoff on success
+  }
+}
+
+void BusT4Cover::rediscover() {
+  if (current_operation != cover::COVER_OPERATION_IDLE) {
+    ESP_LOGW(TAG, "Not restarting discovery while the gate is moving");
+    return;
+  }
+
+  ESP_LOGI(TAG, "Restarting bus discovery");
+  // Clear everything discovery derives so stale state cannot mask a failed round
+  has_oxi_ = false;
+  oxi_address_ = T4Source{0x00, 0x00};
+  oxi_product_.clear();
+  oxi_firmware_.clear();
+  product_name_.clear();
+  manufacturer_.clear();
+  firmware_version_.clear();
+  is_walky_ = false;
+  is_robus_ = false;
+  pos_max_ = 2048;
+  pos_min_ = 0;
+  encoder_max_ = 0;
+  pos_max_from_cu_ = false;
+  discovery_attempts_ = 0;
+  init_ok_ = false;
+  last_init_attempt_ = 0;
+
+  if (address_pinned_) {
+    init_step_ = 1;
+  } else {
+    target_address_ = T4Source{0x00, 0x03};
+    controller_found_ = false;
+    init_step_ = 0;
+  }
 }
 
 uint32_t BusT4Cover::get_discovery_interval() const {

@@ -63,8 +63,12 @@ void BusT4Component::loop() {
       continue;
     }
 
-    // Ignore packets addressed TO ourselves that we sent (broadcast responses come TO us)
-    // But accept packets where TO matches our address (responses to our requests)
+    // Log foreign destinations without dropping them yet
+    if (!t4_addressed_to(packet.header.to, address_)) {
+      ESP_LOGD(TAG, "Packet addressed to 0x%02X.%02X, not us: %s",
+               packet.header.to.address, packet.header.to.endpoint,
+               format_hex_pretty(packet.data, packet.size).c_str());
+    }
 
     // Dispatch to all registered devices
     for (auto *device : devices_) {

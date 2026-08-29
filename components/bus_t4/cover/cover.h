@@ -22,6 +22,9 @@ static constexpr uint32_t MAX_LEARNED_DURATION = 300000;  // 5 minutes
 // Deviation threshold for updating learned values (10%)
 static constexpr float LEARNING_DEVIATION_THRESHOLD = 0.10f;
 
+// Discovery rounds to wait for a device type 0x04 answer before trusting the address
+static constexpr uint8_t DISCOVERY_TYPE_ATTEMPTS = 3;
+
 // Structure for persisting learned durations
 struct LearnedDurations {
   uint32_t open_duration;
@@ -53,6 +56,17 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   void set_close_duration(uint32_t duration) { close_duration_ = duration; }
   void set_auto_learn_timing(bool enable) { auto_learn_timing_ = enable; }
   void set_position_report_interval(uint32_t interval) { position_report_interval_ = interval; }
+  void set_force_estimated_position(bool enable) { force_estimated_position_ = enable; }
+
+  // Pin the control unit address and skip discovery
+  void set_controller_address(uint16_t address) {
+    target_address_.address = static_cast<uint8_t>(address >> 8);
+    target_address_.endpoint = static_cast<uint8_t>(address & 0xFF);
+    address_pinned_ = true;
+  }
+
+  // Re-run bus discovery and device identification
+  void rediscover();
 
   // Motor controller configuration (runtime)
   // These send commands to the motor controller to change its settings
@@ -85,6 +99,12 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   // Update position from encoder value
   void update_position(uint16_t encoder_pos);
 
+  // Decode a position payload, whose width varies by controller
+  bool read_position_value(const T4Packet &packet, uint16_t *out, bool walky_one_byte = true) const;
+
+  // Latch the control unit address found by discovery
+  void accept_controller(T4Source addr, const char *via);
+
   // Publish state only if changed
   void publish_state_if_changed();
 
@@ -94,6 +114,8 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   bool init_ok_{false};
   uint8_t init_step_{0};  // Initialization state machine step
   uint8_t discovery_attempts_{0};  // Discovery retry counter for exponential backoff
+  bool controller_found_{false};   // Control unit latched - ignore later responders
+  bool address_pinned_{false};     // Control unit address came from YAML
   uint32_t get_discovery_interval() const;  // Get current discovery retry interval
 
   // Device identification - for device-specific handling
@@ -110,9 +132,11 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   std::string oxi_firmware_;           // OXI firmware version
 
   // Position tracking
-  uint16_t pos_max_{2048};    // Encoder position for fully open
-  uint16_t pos_min_{0};       // Encoder position for fully closed
-  uint16_t pos_current_{0};   // Current encoder position
+  uint16_t pos_max_{2048};       // Encoder position for fully open
+  uint16_t pos_min_{0};          // Encoder position for fully closed
+  uint16_t pos_current_{0};      // Current encoder position
+  uint16_t encoder_max_{0};      // Physical encoder limit (INF_MAX_OPN), not the open point
+  bool pos_max_from_cu_{false};  // pos_max_ came from INF_POS_MAX rather than a fallback
 
   // Motor type
   T4MotorType motor_type_{MOTOR_SLIDING};
@@ -142,6 +166,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   uint32_t last_status_refresh_{0};  // Periodic status refresh
 
   // Position source tracking
+  bool force_estimated_position_{false};  // Ignore encoder reports, always estimate from timing
   bool has_encoder_{false};          // True if device reports encoder positions
   uint32_t last_encoder_update_{0};  // Last time we got encoder data
 

@@ -31,6 +31,11 @@ struct T4Source {
   bool operator!=(const T4Source& other) const { return !(*this == other); }
 };
 
+// Either address byte set to 0xFF marks a broadcast
+inline bool t4_addressed_to(const T4Source& to, const T4Source& self) {
+  return to == self || to.address == 0xFF || to.endpoint == 0xFF;
+}
+
 // Message type (byte 6 of packet)
 enum T4Protocol : uint8_t {
   DEP = 0x01,  // Direct Execute Protocol - command execution
@@ -198,6 +203,15 @@ struct T4Packet {
     data[size - 1] = checksum(sizeof(header), messageSize);
   }
 };
+
+// messageSize also covers device, command, flags, sequence, status and the checksum, and is not
+// cross-checked against the frame length, so clamp it to the bytes actually received
+inline uint8_t t4_dmp_payload_len(const T4Packet& packet) {
+  if (packet.header.messageSize < 6 || packet.size < 13) return 0;
+  const uint8_t declared = packet.header.messageSize - 6;
+  const uint8_t available = packet.size - 13;
+  return declared < available ? declared : available;
+}
 
 // DEP command packet structure
 enum T4CommandPacket : uint8_t {
