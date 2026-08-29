@@ -1,0 +1,27 @@
+name: Version
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: read
+
+jobs:
+  version-matches-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare the reported version with the tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          reported=$(sed -n 's/^static const char \*VERSION = "\(.*\)";$/\1/p' \
+            components/bus_t4/bus_t4_component.cpp)
+          echo "tag=$tag reported=$reported"
+          if [ "$tag" != "$reported" ]; then
+            echo "::error::VERSION in bus_t4_component.cpp is '$reported' but the tag is '$tag'"
+            exit 1
+          fi

@@ -26,12 +26,16 @@ body:
     validations:
       required: true
 
-  - type: input
-    id: esphome
+  - type: textarea
+    id: dump_config
     attributes:
-      label: ESPHome Version
-      description: What version of ESPHome are you using?
-      placeholder: "2024.12.0"
+      label: Startup log
+      description: |
+        Run `esphome logs your-config.yaml` and paste everything from the `[I][app:...]` line
+        down to the end of the `[C][bus_t4.cover:...]` block. This reports the component and
+        ESPHome versions, your controller's product and firmware strings, the resolved control
+        unit address, and which position source is in use.
+      render: text
     validations:
       required: true
 
