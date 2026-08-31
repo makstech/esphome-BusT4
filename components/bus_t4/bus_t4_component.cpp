@@ -13,7 +13,7 @@ namespace esphome::bus_t4 {
 static const char *TAG = "bus_t4";
 
 // Bumped when tagging a release; checked against the tag by CI
-static const char *VERSION = "1.1.0";
+static const char *VERSION = "1.2.0";
 
 // Break signal baud rate: sending 0x00 at 9200 baud produces a ~1ms low pulse
 // on a 19200 baud bus. Reference: pruwait/Nice_BusT4 nice-bust4.h
