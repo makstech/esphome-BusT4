@@ -25,6 +25,9 @@ static constexpr float LEARNING_DEVIATION_THRESHOLD = 0.10f;
 // Discovery rounds to wait for a device type 0x04 answer before trusting the address
 static constexpr uint8_t DISCOVERY_TYPE_ATTEMPTS = 3;
 
+// Reported by controllers for a position they do not know
+static constexpr uint16_t POSITION_UNKNOWN = 0xFFFF;
+
 // Structure for persisting learned durations
 struct LearnedDurations {
   uint32_t open_duration;
@@ -105,6 +108,9 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   // Latch the control unit address found by discovery
   void accept_controller(T4Source addr, const char *via);
 
+  // Adopt the current encoder reading as the open position
+  void learn_open_position();
+
   // Publish state only if changed
   void publish_state_if_changed();
 
@@ -137,6 +143,7 @@ class BusT4Cover : public cover::Cover, public BusT4Device, public Component {
   uint16_t pos_current_{0};      // Current encoder position
   uint16_t encoder_max_{0};      // Physical encoder limit (INF_MAX_OPN), not the open point
   bool pos_max_from_cu_{false};  // pos_max_ came from INF_POS_MAX rather than a fallback
+  bool pos_max_learned_{false};  // pos_max_ was taken from the encoder at full open
 
   // Motor type
   T4MotorType motor_type_{MOTOR_SLIDING};
