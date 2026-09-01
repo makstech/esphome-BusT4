@@ -149,8 +149,10 @@ void BusT4Cover::dump_config() {
       case MOTOR_UPANDOVER: type_str = "Up-and-over"; break;
     }
     ESP_LOGCONFIG(TAG, "  Motor type: %s", type_str);
-    ESP_LOGCONFIG(TAG, "  Position range: %d - %d%s", pos_min_, pos_max_,
-                  pos_max_from_cu_ ? "" : " (open position not reported)");
+    const char *range_note = pos_max_from_cu_ ? ""
+                             : pos_max_learned_ ? " (open position learned at full open)"
+                                                : " (open position not reported)";
+    ESP_LOGCONFIG(TAG, "  Position range: %d - %d%s", pos_min_, pos_max_, range_note);
     if (encoder_max_ > 0) {
       ESP_LOGCONFIG(TAG, "  Encoder max: %d", encoder_max_);
     }
@@ -318,6 +320,7 @@ void BusT4Cover::parse_dep_packet(const T4Packet &packet) {
 
       case STA_OPENED:
         ESP_LOGI(TAG, "Gate fully open");
+        learn_open_position();
         // Finish learning open duration if we were learning
         if (learning_open_) {
           finish_learning_open();
@@ -437,6 +440,9 @@ void BusT4Cover::parse_dep_packet(const T4Packet &packet) {
     if (pos > 0) {
       update_position(pos);
     }
+    if (status == STA_OPENED) {
+      learn_open_position();
+    }
     publish_state_if_changed();
   }
 }
@@ -554,6 +560,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
 
       switch (gate_status) {
         case STA_OPENED:
+          learn_open_position();
           current_operation = cover::COVER_OPERATION_IDLE;
           this->position = cover::COVER_OPEN;
           if (awaiting_confirmation_) {
@@ -604,6 +611,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       if (pos > 0) {
         pos_max_ = pos;
         pos_max_from_cu_ = true;
+        pos_max_learned_ = false;
         ESP_LOGI(TAG, "Open position: %d", pos_max_);
       }
       break;
@@ -614,7 +622,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       uint16_t pos;
       if (!read_position_value(packet, &pos, false)) break;
       // Only meaningful once an open position is known
-      if ((pos_max_from_cu_ || encoder_max_ > 0) && pos >= pos_max_) {
+      if ((pos_max_from_cu_ || pos_max_learned_ || encoder_max_ > 0) && pos >= pos_max_) {
         // An inverted range freezes every later position update
         ESP_LOGW(TAG, "Ignoring close position %d - not below open position %d", pos, pos_max_);
         break;
@@ -630,7 +638,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
       if (!read_position_value(packet, &pos)) break;
       encoder_max_ = pos;
       ESP_LOGI(TAG, "Max encoder position: %d", encoder_max_);
-      if (!pos_max_from_cu_ && pos > 0) {
+      if (!pos_max_from_cu_ && !pos_max_learned_ && pos > 0) {
         pos_max_ = pos;
         ESP_LOGD(TAG, "Using encoder max as open position (INF_POS_MAX unavailable)");
       }
@@ -938,6 +946,11 @@ void BusT4Cover::request_status_confirmation() {
 }
 
 void BusT4Cover::update_position(uint16_t encoder_pos) {
+  if (encoder_pos == POSITION_UNKNOWN) {
+    ESP_LOGD(TAG, "Controller reports no position");
+    return;
+  }
+
   pos_current_ = encoder_pos;
 
   if (force_estimated_position_) {
@@ -1189,18 +1202,37 @@ bool BusT4Cover::read_position_value(const T4Packet &packet, uint16_t *out,
     return false;
   }
 
+  uint16_t value;
+  // 1-byte scales use the full range, so 0xFF there is a real position
   if ((walky_one_byte && is_walky_) || len == 1) {
-    *out = packet.data[DATA_OFFSET];
-    return true;
-  }
-  if (len == 3) {
+    value = packet.data[DATA_OFFSET];
+  } else if (len == 3) {
     ESP_LOGV(TAG, "Encoder selector 0x%02X", packet.data[DATA_OFFSET]);
-    *out = (packet.data[DATA_OFFSET + 1] << 8) | packet.data[DATA_OFFSET + 2];
-    return true;
+    value = (packet.data[DATA_OFFSET + 1] << 8) | packet.data[DATA_OFFSET + 2];
+  } else {
+    // 2 bytes, and wider payloads read from the front
+    value = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
   }
-  // 2 bytes, and wider payloads read from the front
-  *out = (packet.data[DATA_OFFSET] << 8) | packet.data[DATA_OFFSET + 1];
+
+  if (value == POSITION_UNKNOWN) {
+    ESP_LOGD(TAG, "Controller reports no position for cmd=0x%02X", packet.message.command);
+    return false;
+  }
+
+  *out = value;
   return true;
+}
+
+void BusT4Cover::learn_open_position() {
+  // A controller that reports no open position leaves the scale on a compiled-in default,
+  // so take the reading at the one point where the gate's position is known
+  if (pos_max_from_cu_ || !has_encoder_ || pos_current_ <= pos_min_) return;
+  if (pos_max_ == pos_current_) return;
+  if (millis() - last_encoder_update_ > 2 * position_report_interval_) return;
+
+  pos_max_ = pos_current_;
+  pos_max_learned_ = true;
+  ESP_LOGI(TAG, "Learned open position: %d", pos_max_);
 }
 
 void BusT4Cover::accept_controller(T4Source addr, const char *via) {
@@ -1243,6 +1275,7 @@ void BusT4Cover::rediscover() {
   pos_min_ = 0;
   encoder_max_ = 0;
   pos_max_from_cu_ = false;
+  pos_max_learned_ = false;
   discovery_attempts_ = 0;
   init_ok_ = false;
   last_init_attempt_ = 0;
