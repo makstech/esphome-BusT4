@@ -2,7 +2,6 @@
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
-#include <freertos/event_groups.h>
 #include <functional>
 #include <vector>
 #include "esphome/components/uart/uart.h"
@@ -15,6 +14,14 @@ namespace esphome::bus_t4 {
 
 // Forward declaration
 class BusT4Device;
+
+// A queued transmission, already framed. Packets and raw sends share one path so that
+// nothing writes to the UART outside the bus task.
+struct T4Frame {
+  uint8_t size = 0;
+  bool raw = false;
+  uint8_t data[sizeof(T4Packet::data) + 3] = {};  // SYNC + size + payload + size
+};
 
 class BusT4Component final : public Component, public uart::UARTDevice {
  public:
@@ -30,13 +37,9 @@ class BusT4Component final : public Component, public uart::UARTDevice {
     return xQueueReceive(rxQueue_, packet, xTicksToWait);
   }
 
-  bool write(T4Packet *packet, TickType_t xTicksToWait) {
-    if (txQueue_ == nullptr)
-      return false;
-    return xQueueSend(txQueue_, packet, xTicksToWait);
-  }
+  bool write(T4Packet *packet, TickType_t xTicksToWait);
 
-  // Send raw bytes directly to UART (for debugging/testing)
+  // Queue already-framed bytes verbatim (for debugging/testing)
   void write_raw(const uint8_t *data, size_t len);
 
   void set_address(const uint16_t address) {
@@ -50,10 +53,11 @@ class BusT4Component final : public Component, public uart::UARTDevice {
   void register_device(BusT4Device *device) { devices_.push_back(device); }
 
  private:
-  void rxTask();
-  void txTask();
-  static void rxTaskThunk(void *self) { static_cast<BusT4Component *>(self)->rxTask(); }
-  static void txTaskThunk(void *self) { static_cast<BusT4Component *>(self)->txTask(); }
+  // Receive and transmit share one task so a send can never land mid-frame
+  void busTask();
+  static void busTaskThunk(void *self) { static_cast<BusT4Component *>(self)->busTask(); }
+
+  bool queue_frame(const T4Frame &frame, TickType_t xTicksToWait);
 
   // Send a BusT4 break signal (~1ms low pulse) before each packet.
   // Temporarily lowers UART baud rate to produce the correct break duration.
@@ -61,20 +65,15 @@ class BusT4Component final : public Component, public uart::UARTDevice {
 
   T4Source address_;
 
-  TaskHandle_t rxTask_ = nullptr;
-  TaskHandle_t txTask_ = nullptr;
+  TaskHandle_t busTask_ = nullptr;
 
   QueueHandle_t rxQueue_ = nullptr;
   QueueHandle_t txQueue_ = nullptr;
-
-  EventGroupHandle_t requestEvent_ = nullptr;
 
   std::vector<BusT4Device *> devices_;
 
   // Cached UART port for direct baud rate register writes during break signal.
   uart_port_t uart_num_ = UART_NUM_MAX;
 };
-
-enum { EB_REQUEST_FREE = 1, EB_REQUEST_PENDING = 2, EB_REQUEST_COMPLETE = 4 };
 
 } // namespace esphome::bus_t4
