@@ -346,6 +346,7 @@ void BusT4Cover::parse_dep_packet(const T4Packet &packet) {
         break;
 
       case STA_STOPPED:
+      case STA_STOPPED_ALT:  // Alternate code used by Robus
       case OP_STOPPED:
         ESP_LOGI(TAG, "Gate stopped (mid-movement)");
         cancel_learning();  // Stopped mid-movement, can't learn
@@ -395,8 +396,9 @@ void BusT4Cover::parse_dep_packet(const T4Packet &packet) {
     publish_state_if_changed();
   }
 
-  // Check for STA (status during movement) packets
-  if (command == STA) {
+  // Check for STA (status during movement) packets. Robus sends them without the 0x80 bit (0x40),
+  // the same way it answers RUN.
+  if (command == STA || command == (STA - 0x80)) {
     uint8_t status = packet.data[DEP_DATA_OFFSET];
     uint16_t pos = 0;
 
