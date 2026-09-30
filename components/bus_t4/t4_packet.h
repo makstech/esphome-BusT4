@@ -135,6 +135,7 @@ enum T4GateStatus : uint8_t {
   // Alternate status codes used by some controllers (e.g., Road 400)
   STA_OPENING_ALT = 0x83,   // Opening (alternate)
   STA_CLOSING_ALT = 0x84,   // Closing (alternate)
+  STA_STOPPED_ALT = 0x88,   // Stopped (alternate, OP_STOPPED | 0x80; acknowledgement of STOP on Robus)
 };
 
 // Operation status in RSP packets (byte 11)
