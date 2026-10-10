@@ -15,7 +15,7 @@ jobs:
       pull-requests: read
     runs-on: ubuntu-latest
     steps:
-      - uses: release-drafter/release-drafter@v7.7.0
+      - uses: release-drafter/release-drafter@v7.10.0
         with:
           config-name: release-drafter.yml
         env:
