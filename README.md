@@ -240,6 +240,7 @@ transport, with one or more devices declared on it.
 | `cover` | block | — | The gate cover (options below) |
 | `expose` | list | — | Parameters to expose, by name. Each becomes the right entity (`switch`/`number`/`select`/`sensor`/`button`), resolved from the name (types below) |
 | `diagnostics` | bool/map | — | `true` adds the controller's firmware/product/hardware/description text sensors (or a map to rename them) |
+| `io` | bool/map | — | Polls the controller's I/O diagnostics and publishes input, limit and error bits as binary sensors (below) |
 
 Every `expose` entry is a built-in param name — bare (`auto_close`) or a map with per-entity overrides (`{param: auto_close, name: …, icon: …, id: …}`). The entity type (switch/number/select/sensor/button) is resolved from the name (names are unique across types). Settable entities send a SET on change and also track GET/SET replies on the bus, so changes made elsewhere (Oview, another client) are reflected immediately. A param the controller doesn't support shows as unavailable.
 
@@ -262,6 +263,27 @@ expose:
 Required tail per domain: number → `min`,`max` (+ optional `step`=1, `unit`, `width`=1, `scale`=1); select → `options`; button → `value`; sensor → optional `width`=1; switch → none. ⚠️ A custom entry writes the raw byte to the controller with no range checks — same risk class as the `debug_request` action below. Find addresses with `debug_request` or gashtaan's parameter table.
 
 `cover` options: `name` (defaults to `""`, which makes the cover inherit its device name), `auto_learn_timing` (`true`), `open_duration` (`20s`), `close_duration` (`20s`), `position_report_interval` (`1s`), `force_estimated_position` (`false`; debug — ignore the encoder and always report the time-based estimate, at `position_report_interval` cadence).
+
+`io` polls the I/O diagnostics register (`0xD1`) every `update_interval` (`5s`) and publishes the bits you list as diagnostic binary sensors, so Home Assistant keeps their history. `io: true` creates the four command inputs (`stop`, `step_by_step`, `open`, `close`). A map picks bits by key, each optionally renamed (`stop: "Stop input"`); a key with no value takes its default name. `raw` adds a text sensor with the whole payload in hex, for bits not mapped below.
+
+| Key | Default name | Meaning |
+|-----|--------------|---------|
+| `stop` | Stop input | STOP input active — the controller ignores every command while it is |
+| `step_by_step`, `open`, `close` | Step-by-step / Open / Close input | Wired command inputs |
+| `loop_1`, `loop_2` | Loop 1 / Loop 2 input | Loop detector inputs |
+| `open_limit_m1`, `close_limit_m1`, `open_limit_m2`, `close_limit_m2` | Open / Close limit M1 / M2 | Limit switches |
+| `motor_m1`, `motor_m2` | Motor M1 / M2 output | Motor outputs driven |
+| `thermal` | Thermal protection | Thermal protection tripped |
+| `standby_active` | Stand-by active | Controller is in stand-by |
+| `on_battery` | On battery | Running from the backup battery |
+| `position_error` | Position error | Controller-reported fault |
+| `bluebus_error` | BlueBus error | Controller-reported fault |
+| `stop_error` | Stop circuit error | Controller-reported fault |
+| `function_error` | Function error | Controller-reported fault |
+| `settings_error` | Settings error | Controller-reported fault |
+| `raw` | IO raw | Whole payload as hex |
+
+The bit layout follows [gashtaan's diagnostics page](https://github.com/gashtaan/nice-bidiwifi-firmware/blob/main/firmware/web.cpp). Whether an input reads on when its contact is closed or when it is triggered depends on how the controller learned it, so compare against the controller's own input LEDs before building automations on one.
 
 #### bus_t4_oxi (device)
 

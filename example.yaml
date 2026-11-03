@@ -90,6 +90,16 @@ bus_t4_control_unit:
     open_duration: 20s
     close_duration: 20s
     position_report_interval: 1s
+  # Polled I/O diagnostics: input, limit and error bits as binary sensors.
+  # `io: true` gives the four command inputs; a map picks bits and renames them.
+  io:
+    update_interval: 5s
+    stop: "Stop input"
+    step_by_step:
+    open:
+    close:
+    stop_error:
+    raw: "IO raw"
   # One flat list of parameters by name; each becomes the right entity
   # (switch / number / select / sensor / button), resolved from the name.
   # Bare name, or a map to override name/icon/id.

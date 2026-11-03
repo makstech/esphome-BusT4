@@ -1,5 +1,5 @@
 import esphome.codegen as cg
-from esphome.components import button, cover, number, select, sensor, switch, text_sensor, uart
+from esphome.components import binary_sensor, button, cover, number, select, sensor, switch, text_sensor, uart
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ADDRESS,
@@ -14,7 +14,7 @@ from esphome.const import (
 )
 
 DEPENDENCIES = ["bus_t4"]
-AUTO_LOAD = ["cover", "switch", "text_sensor", "number", "select", "sensor", "button"]
+AUTO_LOAD = ["binary_sensor", "cover", "switch", "text_sensor", "number", "select", "sensor", "button"]
 
 bus_t4_ns = cg.esphome_ns.namespace("bus_t4")
 BusT4Component = bus_t4_ns.class_("BusT4Component", cg.Component, uart.UARTDevice)
@@ -27,6 +27,7 @@ BusT4Number = bus_t4_control_unit_ns.class_("BusT4Number", number.Number, cg.Com
 BusT4Select = bus_t4_control_unit_ns.class_("BusT4Select", select.Select, cg.Component)
 BusT4Sensor = bus_t4_control_unit_ns.class_("BusT4Sensor", sensor.Sensor, cg.PollingComponent)
 BusT4Button = bus_t4_control_unit_ns.class_("BusT4Button", button.Button, cg.Component)
+BusT4IoState = bus_t4_control_unit_ns.class_("BusT4IoState", cg.PollingComponent)
 
 # ESPHome sub-device, referenced by a control_unit `device:` key.
 Device = cg.esphome_ns.class_("Device")
@@ -158,6 +159,35 @@ CONF_CLOSE_DURATION = "close_duration"
 CONF_AUTO_LEARN_TIMING = "auto_learn_timing"
 CONF_POSITION_REPORT_INTERVAL = "position_report_interval"
 CONF_FORCE_ESTIMATED_POSITION = "force_estimated_position"
+CONF_IO = "io"
+CONF_RAW = "raw"
+
+# INF_IO (0xD1) payload bits: name -> (byte, mask, default name, device_class).
+# Layout from gashtaan/nice-bidiwifi-firmware's diagnostics page.
+IO_BITS = {
+    "stop": (0, 0x01, "Stop input", None),
+    "step_by_step": (0, 0x02, "Step-by-step input", None),
+    "open": (0, 0x04, "Open input", None),
+    "close": (0, 0x08, "Close input", None),
+    "loop_1": (0, 0x10, "Loop 1 input", None),
+    "loop_2": (0, 0x20, "Loop 2 input", None),
+    "open_limit_m1": (2, 0x01, "Open limit M1", None),
+    "close_limit_m1": (2, 0x02, "Close limit M1", None),
+    "open_limit_m2": (2, 0x04, "Open limit M2", None),
+    "close_limit_m2": (2, 0x08, "Close limit M2", None),
+    "motor_m1": (4, 0x01, "Motor M1 output", "running"),
+    "motor_m2": (4, 0x02, "Motor M2 output", "running"),
+    "thermal": (9, 0x01, "Thermal protection", "heat"),
+    "standby_active": (9, 0x04, "Stand-by active", None),
+    "on_battery": (9, 0x08, "On battery", "battery"),
+    "position_error": (10, 0x01, "Position error", "problem"),
+    "bluebus_error": (10, 0x02, "BlueBus error", "problem"),
+    "stop_error": (10, 0x04, "Stop circuit error", "problem"),
+    "function_error": (10, 0x08, "Function error", "problem"),
+    "settings_error": (10, 0x10, "Settings error", "problem"),
+}
+# `io: true` creates these; a map picks any of IO_BITS plus `raw`.
+_IO_DEFAULT = ("stop", "step_by_step", "open", "close")
 
 # Resolved-definition keys carried alongside the entity config for to_code; not
 # part of any entity schema, so stripped before validating the entity.
@@ -299,6 +329,39 @@ def _diagnostics(value):
     )(value)
 
 
+def _io_bit_schema(key):
+    _byte, _mask, _name, device_class = IO_BITS[key]
+    kwargs = {"device_class": device_class} if device_class else {}
+    return cv.maybe_simple_value(
+        binary_sensor.binary_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC, **kwargs),
+        key=CONF_NAME,
+    )
+
+
+_IO_SCHEMA = cv.Schema(
+    {
+        cv.GenerateID(): cv.declare_id(BusT4IoState),
+        cv.Optional(CONF_RAW): cv.maybe_simple_value(
+            text_sensor.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC), key=CONF_NAME
+        ),
+        **{cv.Optional(k): _io_bit_schema(k) for k in IO_BITS},
+    }
+).extend(cv.polling_component_schema("5s"))
+
+
+def _io_defaults(value):
+    # Names each requested bit after its default unless the user named it.
+    if value is True:
+        value = {k: None for k in _IO_DEFAULT}
+    value = dict(value)
+    for k in list(value):
+        if k in IO_BITS and not isinstance(value[k], dict):
+            value[k] = {CONF_NAME: value[k] or IO_BITS[k][2]}
+    if CONF_RAW in value and not isinstance(value[CONF_RAW], dict):
+        value[CONF_RAW] = {CONF_NAME: value[CONF_RAW] or "IO raw"}
+    return value
+
+
 def _with_device(entry, dev):
     # Stamp an entity entry with device_id so its name uniqueness is checked
     # per-device (lets the same name appear on the CU and OXI devices).
@@ -329,6 +392,12 @@ def _assign_device(config):
             sub.setdefault(CONF_DEVICE_ID, dev)
             diag[k] = sub
         config[CONF_DIAGNOSTICS] = diag
+    if CONF_IO in config:
+        io = dict(_io_defaults(config[CONF_IO]))
+        for k in (*IO_BITS, CONF_RAW):
+            if k in io:
+                io[k] = {**io[k], CONF_DEVICE_ID: io[k].get(CONF_DEVICE_ID, dev)}
+        config[CONF_IO] = io
     return config
 
 
@@ -343,6 +412,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_COVER): _cover,
             cv.Optional(CONF_EXPOSE, default=[]): cv.ensure_list(_expose),
             cv.Optional(CONF_DIAGNOSTICS): _diagnostics,
+            cv.Optional(CONF_IO): cv.All(_io_defaults, _IO_SCHEMA),
         }
     ),
 )
@@ -434,3 +504,16 @@ async def to_code(config):
         cg.add(cu.set_product_sensor(await text_sensor.new_text_sensor(v[CONF_PRODUCT])))
         cg.add(cu.set_hardware_sensor(await text_sensor.new_text_sensor(v[CONF_HARDWARE])))
         cg.add(cu.set_description_sensor(await text_sensor.new_text_sensor(v[CONF_DESCRIPTION])))
+
+    if CONF_IO in config:
+        ic = config[CONF_IO]
+        io = cg.new_Pvariable(ic[CONF_ID])
+        await cg.register_component(io, ic)
+        cg.add(io.set_parent(bus))
+        if cu_address is not None:
+            cg.add(io.set_target_address(cu_address))
+        for key, (byte, mask, _name, _cls) in IO_BITS.items():
+            if key in ic:
+                cg.add(io.add_bit(await binary_sensor.new_binary_sensor(ic[key]), byte, mask))
+        if CONF_RAW in ic:
+            cg.add(io.set_raw_sensor(await text_sensor.new_text_sensor(ic[CONF_RAW])))
