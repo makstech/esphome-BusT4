@@ -4,6 +4,7 @@
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
 
+#include "hex_dump.h"
 #include "t4_packet.h"
 
 #include <esp_rom_sys.h>
@@ -69,7 +70,7 @@ void BusT4Component::loop() {
     if (!t4_addressed_to(packet.header.to, address_)) {
       ESP_LOGD(TAG, "Packet addressed to 0x%02X.%02X, not us: %s",
                packet.header.to.address, packet.header.to.endpoint,
-               format_hex_pretty(packet.data, packet.size).c_str());
+               hex_dump(packet.data, packet.size).c_str());
     }
 
     // Dispatch to all registered devices
@@ -134,7 +135,7 @@ void BusT4Component::busTask() {
             if (header_check != packet.data[6]) {
               ESP_LOGW(TAG, "Header checksum mismatch: expected 0x%02X, got 0x%02X: %s",
                        header_check, packet.data[6],
-                       format_hex_pretty(packet.data, packet.size).c_str());
+                       hex_dump(packet.data, packet.size).c_str());
               rx_state = WAIT_SYNC;
               break;
             }
@@ -148,7 +149,7 @@ void BusT4Component::busTask() {
               if (payload_check != packet.data[packet.size - 1]) {
                 ESP_LOGW(TAG, "Payload checksum mismatch: expected 0x%02X, got 0x%02X: %s",
                          payload_check, packet.data[packet.size - 1],
-                         format_hex_pretty(packet.data, packet.size).c_str());
+                         hex_dump(packet.data, packet.size).c_str());
                 rx_state = WAIT_SYNC;
                 break;
               }
@@ -156,7 +157,7 @@ void BusT4Component::busTask() {
 
             // Both checksums valid - accept packet
             ESP_LOGD(TAG, "Received packet: %s (%d bytes)",
-                     format_hex_pretty(packet.data, packet.size).c_str(), packet.size);
+                     hex_dump(packet.data, packet.size).c_str(), packet.size);
             if (!xQueueSend(rxQueue_, &packet, pdMS_TO_TICKS(100))) {
               ESP_LOGW(TAG, "RX queue full, dropping packet");
             }
@@ -178,10 +179,10 @@ void BusT4Component::busTask() {
         }
 
         if (frame.raw) {
-          ESP_LOGD(TAG, "Sending raw: %s", format_hex_pretty(frame.data, frame.size).c_str());
+          ESP_LOGD(TAG, "Sending raw: %s", hex_dump(frame.data, frame.size).c_str());
         } else {
           ESP_LOGD(TAG, "Sending packet: %s",
-                   format_hex_pretty(frame.data + 2, frame.size - 3).c_str());
+                   hex_dump(frame.data + 2, frame.size - 3).c_str());
         }
         send_break();
         parent_->write_array(frame.data, frame.size);
