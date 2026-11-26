@@ -1,6 +1,7 @@
 #include "cover.h"
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
+#include "../hex_dump.h"
 #include <cmath>
 #include <string>
 #include <algorithm>
@@ -469,7 +470,7 @@ void BusT4Cover::parse_dmp_packet(const T4Packet &packet) {
 
   if (payload_len > 0 && packet.size >= DATA_OFFSET + payload_len) {
     ESP_LOGV(TAG, "DMP payload (%d): %s", payload_len,
-             format_hex_pretty(packet.data + DATA_OFFSET, payload_len).c_str());
+             hex_dump(packet.data + DATA_OFFSET, payload_len).c_str());
   }
 
   // Check for errors
@@ -1187,7 +1188,7 @@ void BusT4Cover::send_raw_cmd(const std::string &data) {
 
   if (bytes.empty()) return;
 
-  ESP_LOGI(TAG, "Sending raw command: %s", format_hex_pretty(bytes).c_str());
+  ESP_LOGI(TAG, "Sending raw command: %s", hex_dump(bytes).c_str());
   parent_->write_raw(bytes.data(), bytes.size());
 }
 
